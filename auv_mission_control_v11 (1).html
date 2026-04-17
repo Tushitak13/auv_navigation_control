@@ -1,0 +1,1740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AUV Mission Control v11</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg0:#020810;--bg1:#080f1a;--bg2:#0d1520;--bg3:#060c16;
+  --bd1:#1e3a4a;--bd2:#152535;--bd3:#0a1520;
+  --tx1:#d4eaf5;--tx2:#4a7a95;--tx3:#2a4a60;
+  --cyan:#00d4ff;--teal:#00b89c;--green:#1dde8c;
+  --warn:#f5a623;--err:#ff4a4a;--info:#4fa8ff;
+  --purple:#9b6dff;--pink:#ff6b9d;
+  --r:6px;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+@keyframes scanline{0%{transform:translateY(-100%)}100%{transform:translateY(100%)}}
+@keyframes blink{0%,100%{opacity:1}49%{opacity:1}50%{opacity:0}}
+@keyframes sonarPing{0%{transform:scale(0.5);opacity:0.8}100%{transform:scale(1.5);opacity:0}}
+@keyframes slideIn{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:translateX(0)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:translateY(0)}}
+
+body{background:var(--bg0);display:flex;justify-content:center;align-items:center;min-height:100vh;font-family:'Share Tech Mono',monospace;overflow:hidden;}
+body::before{content:'';position:fixed;top:0;left:0;right:0;bottom:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,212,255,0.015) 2px,rgba(0,212,255,0.015) 4px);pointer-events:none;z-index:9999;}
+
+#app{display:grid;grid-template-columns:1fr 300px;grid-template-rows:42px 1fr 32px;background:var(--bg3);border-radius:var(--r);overflow:hidden;border:1px solid var(--bd1);width:980px;height:640px;box-shadow:0 0 40px rgba(0,180,220,0.12),0 0 80px rgba(0,180,220,0.05),inset 0 0 40px rgba(0,10,20,0.8);}
+
+/* ===== TOPBAR ===== */
+#topbar{grid-column:1/3;background:var(--bg1);border-bottom:1px solid var(--bd1);padding:0 12px;display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow:hidden;position:relative;}
+#topbar::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--cyan),transparent);opacity:0.3;}
+.tb-title{font-family:'Exo 2',sans-serif;font-size:12px;font-weight:700;color:var(--cyan);letter-spacing:2px;white-space:nowrap;text-shadow:0 0 12px rgba(0,212,255,0.5);}
+.tb-ver{font-size:8px;color:var(--tx2);background:var(--bg2);border:1px solid var(--bd1);padding:1px 5px;border-radius:2px;margin-right:4px;}
+.badge{font-size:8px;padding:2px 6px;border-radius:3px;font-weight:600;letter-spacing:.4px;white-space:nowrap;cursor:default;font-family:'Share Tech Mono',monospace;}
+.ok{background:rgba(29,222,140,0.1);color:var(--green);border:1px solid rgba(29,222,140,0.35);}
+.warn{background:rgba(245,166,35,0.1);color:var(--warn);border:1px solid rgba(245,166,35,0.35);}
+.err{background:rgba(255,74,74,0.12);color:var(--err);border:1px solid rgba(255,74,74,0.4);}
+.err.pulse{animation:blink 1s infinite;}
+.info{background:rgba(79,168,255,0.1);color:var(--info);border:1px solid rgba(79,168,255,0.3);}
+.tb-sp{flex:1;}
+
+#bat-wrap{display:flex;align-items:center;gap:4px;background:var(--bg2);border:1px solid var(--bd1);border-radius:4px;padding:3px 7px;}
+.bat-label{font-size:8px;color:var(--tx2);letter-spacing:.5px;}
+#bat-bar-outer{width:44px;height:8px;background:rgba(0,0,0,0.5);border:1px solid var(--bd1);border-radius:2px;overflow:hidden;position:relative;}
+#bat-bar-inner{height:100%;width:100%;background:var(--green);border-radius:1px;transition:width .5s,background .5s;}
+#bat-pct{font-size:9px;color:var(--tx1);min-width:28px;text-align:right;}
+.bat-icon{font-size:10px;}
+
+/* ===== SIMULATION CANVAS AREA ===== */
+#simwrap{position:relative;overflow:hidden;background:#020810;}
+#cv{display:block;width:100%;height:100%;}
+
+/* CURSOR MODES */
+#simwrap.mode-obstacle{cursor:crosshair;}
+#simwrap.mode-waypoint{cursor:cell;}
+
+/* PLACEMENT TOOLTIP */
+#place-tooltip{position:absolute;top:6px;left:50%;transform:translateX(-50%);background:rgba(0,20,40,0.92);border:1px solid var(--cyan);border-radius:4px;padding:4px 12px;font-size:9px;font-family:'Share Tech Mono',monospace;color:var(--cyan);letter-spacing:.5px;pointer-events:none;z-index:200;display:none;animation:fadeIn .15s ease;}
+#place-tooltip.visible{display:block;}
+#place-tooltip.mode-obs{border-color:var(--err);color:var(--err);}
+#place-tooltip.mode-wp{border-color:var(--green);color:var(--green);}
+
+/* PLACEMENT GHOST */
+#place-ghost{position:absolute;pointer-events:none;z-index:150;display:none;}
+
+/* Minimap overlay */
+#minimap{position:absolute;bottom:46px;right:8px;width:100px;height:75px;background:rgba(6,12,20,0.88);border:1px solid var(--bd1);border-radius:4px;overflow:hidden;}
+#mm-cv{display:block;width:100%;height:100%;}
+.mm-label{position:absolute;top:2px;left:4px;font-size:7px;color:var(--tx2);letter-spacing:.5px;}
+
+/* Object detection panel */
+#obj-panel{position:absolute;top:6px;right:6px;width:130px;background:rgba(6,12,22,0.9);border:1px solid var(--bd1);border-radius:4px;padding:5px;display:none;}
+#obj-panel.visible{display:block;animation:slideIn .2s ease;}
+.obj-title{font-size:8px;color:var(--cyan);letter-spacing:.5px;margin-bottom:4px;border-bottom:1px solid var(--bd2);padding-bottom:3px;}
+.obj-item{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;}
+.obj-name{font-size:8px;color:var(--tx1);}
+.obj-conf{font-size:7px;padding:1px 4px;border-radius:2px;}
+.obj-high{background:rgba(29,222,140,0.15);color:var(--green);border:1px solid rgba(29,222,140,0.3);}
+.obj-med{background:rgba(245,166,35,0.15);color:var(--warn);border:1px solid rgba(245,166,35,0.3);}
+.obj-low{background:rgba(79,168,255,0.15);color:var(--info);border:1px solid rgba(79,168,255,0.3);}
+
+/* HUD strip */
+#hud{position:absolute;bottom:0;left:0;right:0;padding:4px 8px;display:flex;gap:0;background:rgba(2,8,16,0.95);border-top:1px solid rgba(0,180,220,0.15);}
+.hc{flex:1;text-align:center;padding:0 2px;}
+.hl{font-size:7px;color:var(--tx3);letter-spacing:.4px;text-transform:uppercase;display:block;}
+.hv{font-size:10px;font-weight:600;color:var(--cyan);font-family:'Share Tech Mono';display:block;}
+.hv.w{color:var(--warn)}.hv.c{color:var(--err)}
+.hc-div{width:1px;background:var(--bd2);margin:2px 0;}
+
+/* ===== SIDEBAR ===== */
+#side{background:var(--bg1);border-left:1px solid var(--bd1);overflow-y:auto;display:flex;flex-direction:column;}
+#side::-webkit-scrollbar{width:3px;}
+#side::-webkit-scrollbar-thumb{background:var(--bd1);border-radius:2px;}
+
+.ss{padding:7px 9px;border-bottom:1px solid var(--bd2);}
+.st{font-size:8px;font-weight:600;color:var(--tx2);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;display:flex;align-items:center;gap:5px;}
+.st::before{content:'';display:inline-block;width:3px;height:10px;background:var(--cyan);border-radius:1px;opacity:0.5;}
+
+/* Buttons */
+.br{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:4px;}
+.btn{font-size:9px;padding:4px 7px;border:1px solid var(--bd1);background:var(--bg2);color:var(--tx2);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono',monospace;letter-spacing:.2px;transition:all .15s;white-space:nowrap;}
+.btn:hover{color:var(--tx1);border-color:var(--bd1);background:#0f1e2e;}
+.btn.on{background:rgba(0,184,156,0.1);border-color:rgba(0,184,156,0.5);color:var(--teal);}
+.btn.red{border-color:rgba(255,74,74,0.4);color:var(--err);}
+.btn.red:hover{background:rgba(255,74,74,0.1);}
+.btn.orange{border-color:rgba(245,166,35,0.4);color:var(--warn);}
+.btn.orange:hover{background:rgba(245,166,35,0.1);}
+.btn.blue{border-color:rgba(79,168,255,0.4);color:var(--info);}
+.btn.blue:hover{background:rgba(79,168,255,0.1);}
+.btn.purple{border-color:rgba(155,109,255,0.4);color:var(--purple);}
+.btn.home-btn{border-color:rgba(0,212,255,0.5);color:var(--cyan);background:rgba(0,212,255,0.07);}
+.btn.home-btn:hover{background:rgba(0,212,255,0.15);}
+.btn:disabled{opacity:0.35;cursor:not-allowed;}
+/* Active placement mode buttons */
+.btn.place-active-obs{background:rgba(255,74,74,0.15)!important;border-color:var(--err)!important;color:var(--err)!important;animation:blink 1.2s infinite;}
+.btn.place-active-wp{background:rgba(29,222,140,0.15)!important;border-color:var(--green)!important;color:var(--green)!important;animation:blink 1.2s infinite;}
+
+/* Presets */
+.pg{display:grid;grid-template-columns:1fr 1fr;gap:3px;margin-bottom:4px;}
+.pr{font-size:8px;padding:4px 5px;border:1px solid var(--bd2);background:var(--bg2);color:var(--tx2);border-radius:3px;cursor:pointer;font-family:'Share Tech Mono';text-align:center;transition:all .15s;}
+.pr:hover{border-color:var(--bd1);color:var(--tx1);}
+.pr.a{border-color:rgba(79,168,255,0.5);background:rgba(79,168,255,0.08);color:var(--info);}
+
+/* Sliders */
+.sr{display:flex;align-items:center;gap:4px;margin-bottom:3px;}
+.sl{font-size:8px;color:var(--tx2);width:68px;flex-shrink:0;}
+.sv{font-size:8px;color:var(--tx1);width:28px;text-align:right;font-family:'Share Tech Mono';}
+input[type=range]{flex:1;height:2px;-webkit-appearance:none;appearance:none;background:var(--bd2);border-radius:2px;outline:none;}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:9px;height:9px;background:var(--info);border-radius:50%;cursor:pointer;}
+
+/* AI Pipeline */
+.pl{display:grid;grid-template-columns:1fr 1fr;gap:3px;}
+.pn{padding:4px 6px;border-radius:3px;border:1px solid var(--bd2);background:var(--bg2);transition:all .2s;}
+.pn.act{border-color:rgba(29,222,140,0.4);background:rgba(29,222,140,0.06);box-shadow:0 0 8px rgba(29,222,140,0.1);}
+.pnl{font-size:7px;color:var(--tx2);letter-spacing:.2px;display:block;}
+.pnv{font-size:8px;font-weight:500;color:var(--tx1);font-family:'Share Tech Mono';display:block;}
+.pn.act .pnl{color:rgba(29,222,140,0.6)}.pn.act .pnv{color:var(--green);}
+
+/* Env Sensor Strip */
+.alert-strip{display:flex;gap:3px;flex-wrap:wrap;margin-bottom:5px;}
+.sensor-val{font-size:8px;padding:2px 5px;border-radius:3px;font-family:'Share Tech Mono';cursor:default;transition:all .3s;}
+.sv-ok{background:rgba(29,222,140,0.08);color:var(--green);border:1px solid rgba(29,222,140,0.25);}
+.sv-warn{background:rgba(245,166,35,0.08);color:var(--warn);border:1px solid rgba(245,166,35,0.3);}
+.sv-err{background:rgba(255,74,74,0.1);color:var(--err);border:1px solid rgba(255,74,74,0.35);}
+
+/* Charts */
+.cw{height:38px;position:relative;overflow:hidden;border-radius:3px;background:var(--bg0);border:1px solid var(--bd2);}
+canvas.mc{position:absolute;top:0;left:0;}
+.chart-lbl{font-size:7px;color:var(--tx3);margin-bottom:2px;margin-top:5px;}
+
+/* Log */
+#lg{font-size:8px;font-family:'Share Tech Mono',monospace;color:var(--tx3);height:82px;overflow-y:auto;line-height:1.8;padding:5px 7px;background:var(--bg0);border-radius:3px;}
+#lg::-webkit-scrollbar{width:2px;}
+#lg::-webkit-scrollbar-thumb{background:var(--bd1);}
+.lk{color:var(--info)}.lok{color:var(--green)!important}.lw{color:var(--warn)!important}.le{color:var(--err)!important}.lenv{color:var(--purple)!important}.lplastic{color:#22d3ee!important}.loil{color:#f97316!important}.lbat{color:var(--warn)!important}.lsafe{color:var(--cyan)!important}.ldata{color:#c084fc!important}
+
+/* Bottom bar */
+#botbar{grid-column:1/3;background:var(--bg1);border-top:1px solid var(--bd1);padding:0 12px;display:flex;gap:10px;align-items:center;overflow:hidden;}
+.bs{font-size:8px;color:var(--tx2);white-space:nowrap;}.bs span{color:var(--tx1);font-weight:600;}
+.bs-div{width:1px;height:14px;background:var(--bd2);}
+
+/* Safety alert overlay */
+#safety-alert{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,74,74,0.12);border:1px solid rgba(255,74,74,0.5);border-radius:6px;padding:10px 18px;text-align:center;display:none;z-index:100;pointer-events:none;}
+#safety-alert.show{display:block;animation:pulse 0.8s infinite;}
+.sa-title{font-size:13px;color:var(--err);letter-spacing:2px;font-family:'Exo 2',sans-serif;font-weight:700;}
+.sa-sub{font-size:9px;color:rgba(255,74,74,0.7);margin-top:3px;}
+
+/* Depth zones indicator */
+#depth-legend{position:absolute;left:4px;bottom:46px;display:flex;flex-direction:column;gap:2px;}
+.dz{font-size:7px;color:rgba(100,160,200,0.5);display:flex;align-items:center;gap:3px;}
+.dz-bar{width:8px;height:6px;border-radius:1px;}
+
+/* Object classification legend */
+.obj-legend{display:flex;gap:3px;flex-wrap:wrap;margin-top:4px;}
+.obj-tag{font-size:7px;padding:1px 4px;border-radius:2px;background:var(--bg2);border:1px solid var(--bd2);color:var(--tx2);}
+.obj-tag.fish{border-color:rgba(0,200,255,0.4);color:#00c8ff;}
+.obj-tag.jellyfish{border-color:rgba(160,100,255,0.4);color:#a064ff;}
+.obj-tag.penguin{border-color:rgba(80,200,240,0.4);color:#50c8f0;}
+.obj-tag.puffin{border-color:rgba(255,170,50,0.4);color:#ffaa32;}
+.obj-tag.shark{border-color:rgba(255,74,74,0.4);color:#ff4a4a;}
+.obj-tag.starfish{border-color:rgba(255,120,60,0.4);color:#ff7840;}
+.obj-tag.stingray{border-color:rgba(29,222,140,0.4);color:#1dde8c;}
+
+/* ===== KAGGLE DATASET PANEL ===== */
+#ds-panel{background:rgba(6,12,22,0.95);border:1px solid rgba(79,168,255,0.3);border-radius:4px;padding:5px 7px;margin-bottom:4px;}
+.ds-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;}
+.ds-title{font-size:8px;font-weight:600;color:var(--info);letter-spacing:.5px;}
+.ds-badge{font-size:7px;padding:1px 5px;border-radius:2px;background:rgba(79,168,255,0.1);border:1px solid rgba(79,168,255,0.3);color:var(--info);}
+.ds-sub{font-size:7px;color:var(--tx3);margin-bottom:4px;}
+.ds-classes{display:flex;gap:2px;flex-wrap:wrap;margin-bottom:3px;}
+.ds-cls{font-size:6.5px;padding:1px 3px;border-radius:2px;background:var(--bg0);border:1px solid var(--bd2);color:var(--tx2);white-space:nowrap;}
+.ds-stats{display:flex;gap:4px;justify-content:space-between;}
+.ds-stat{font-size:7px;color:var(--tx3);text-align:center;}
+.ds-stat span{display:block;font-size:8px;color:var(--tx1);font-family:'Share Tech Mono';}
+.ds-sep{height:1px;background:var(--bd2);margin:4px 0;}
+/* Confidence bars */
+.ds-conf-row{display:flex;align-items:center;gap:4px;margin-bottom:2px;}
+.ds-conf-lbl{font-size:7px;color:var(--tx2);width:52px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ds-conf-bar-bg{flex:1;height:4px;background:var(--bg0);border-radius:2px;overflow:hidden;}
+.ds-conf-bar{height:100%;border-radius:2px;transition:width 0.6s ease;}
+.ds-conf-val{font-size:6.5px;color:var(--tx2);width:22px;text-align:right;font-family:'Share Tech Mono';}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- ===== TOP BAR ===== -->
+<div id="topbar">
+  <div class="tb-title">◈ AUV MISSION CONTROL</div>
+  <div class="tb-ver">v11.0</div>
+  <div class="badge ok" id="b-sys">● NOMINAL</div>
+  <div class="badge info" id="b-nav">PRM+A*</div>
+  <div class="badge ok" id="b-env">CALM SEA</div>
+  <div class="badge info" id="b-slam">SLAM 100%</div>
+  <div class="badge ok" id="b-oil">OIL CLEAR</div>
+  <div class="badge ok" id="b-plastic">PLASTIC CLEAR</div>
+  <div class="badge ok" id="b-safety">SAFE</div>
+  <div class="tb-sp"></div>
+  <div id="bat-wrap">
+    <span class="bat-icon">🔋</span>
+    <span class="bat-label">POWER</span>
+    <div id="bat-bar-outer"><div id="bat-bar-inner"></div></div>
+    <span id="bat-pct">100%</span>
+  </div>
+  <div class="badge ok" id="b-mis">MISSION 1</div>
+</div>
+
+<!-- ===== SIMULATION CANVAS ===== -->
+<div id="simwrap">
+  <canvas id="cv"></canvas>
+
+  <!-- Placement tooltip -->
+  <div id="place-tooltip"></div>
+
+  <!-- Safety Alert Overlay -->
+  <div id="safety-alert">
+    <div class="sa-title" id="sa-title">⚠ LOW BATTERY</div>
+    <div class="sa-sub" id="sa-sub">RETURNING TO HOME BASE</div>
+  </div>
+
+  <!-- Object Detection Panel -->
+  <div id="obj-panel">
+    <div class="obj-title">🤖 InceptionResNetV2</div>
+    <div style="font-size:7px;color:var(--tx3);margin-bottom:4px;">aquarium-data-cots · 7 classes</div>
+    <div id="obj-list"></div>
+    <div class="obj-legend" id="obj-legend"></div>
+  </div>
+
+  <!-- Minimap -->
+  <div id="minimap">
+    <span class="mm-label">MINIMAP</span>
+    <canvas id="mm-cv" width="100" height="75"></canvas>
+  </div>
+
+  <!-- Depth zone legend -->
+  <div id="depth-legend">
+    <div class="dz"><div class="dz-bar" style="background:rgba(0,100,180,0.6)"></div>SHALLOW</div>
+    <div class="dz"><div class="dz-bar" style="background:rgba(0,60,130,0.6)"></div>MID</div>
+    <div class="dz"><div class="dz-bar" style="background:rgba(0,30,80,0.6)"></div>DEEP</div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="hc"><span class="hl">Pos Err</span><span class="hv" id="h-err">0.00m</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Fusion</span><span class="hv" id="h-conf">100%</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Speed</span><span class="hv" id="h-spd">0.0m/s</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Heading</span><span class="hv" id="h-hdg">0°</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Depth</span><span class="hv" id="h-dep">50m</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">WP</span><span class="hv" id="h-wps">0/4</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Temp</span><span class="hv" id="h-temp">18.5°C</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">pH</span><span class="hv" id="h-ph">7.2</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Salinity</span><span class="hv" id="h-sal">35‰</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Turbidity</span><span class="hv" id="h-turb">LOW</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Water Q.</span><span class="hv" id="h-wq">GOOD</span></div>
+  </div>
+</div>
+
+<!-- ===== SIDEBAR ===== -->
+<div id="side">
+
+  <!-- Simulation Control -->
+  <div class="ss">
+    <div class="st">Simulation Control</div>
+    <div class="br">
+      <button class="btn on" id="btn-run" onclick="toggleRun()">⏸ PAUSE</button>
+      <button class="btn red" onclick="doReset()">↺ RESET</button>
+    </div>
+    <div class="br">
+      <button class="btn orange" id="btn-surface" onclick="doSurface()">▲ SURFACE</button>
+      <button class="btn home-btn" id="btn-home" onclick="doReturnHome()">⌂ RETURN HOME</button>
+    </div>
+    <div class="br">
+      <button class="btn" onclick="doSpillDrill()" title="Inject oil/chemical spill simulation">🛢 OIL DRILL</button>
+      <button class="btn" onclick="doPlasticScan()">♻ SCAN</button>
+      <button class="btn purple" onclick="doObjectScan()">🔍 IRV2 DETECT</button>
+    </div>
+  </div>
+
+  <!-- PLACE TOOLS — Click to place on canvas -->
+  <div class="ss">
+    <div class="st">Place on Canvas <span style="font-size:7px;color:var(--tx3);margin-left:4px;text-transform:none;font-weight:400;letter-spacing:0">(click map)</span></div>
+    <div class="br">
+      <button class="btn red" id="btn-place-obs" onclick="togglePlaceMode('obstacle')">＋ OBSTACLE</button>
+      <button class="btn" id="btn-place-wp" onclick="togglePlaceMode('waypoint')">⊕ WAYPOINT</button>
+      <button class="btn" id="btn-place-cancel" onclick="cancelPlaceMode()" style="display:none">✕ CANCEL</button>
+    </div>
+    <div style="font-size:7px;color:var(--tx3);line-height:1.6;margin-top:2px;" id="place-hint">
+      Click a button above then click anywhere on the simulation canvas to place.
+    </div>
+    <!-- Obstacle size slider -->
+    <div class="sr" style="margin-top:4px;">
+      <span class="sl">Obs. Size</span>
+      <input type="range" id="sl-obs-size" min="8" max="35" step="1" value="18">
+      <span class="sv" id="sv-obs-size">18</span>
+    </div>
+    <div style="font-size:7px;color:var(--tx3);margin-top:3px;">Right-click obstacle on map to remove it</div>
+  </div>
+
+  <!-- Layer Visibility -->
+  <div class="ss">
+    <div class="st">Layer Visibility</div>
+    <div class="br">
+      <button class="btn on" id="btn-sonar" onclick="tog('sonar','btn-sonar')">SONAR</button>
+      <button class="btn on" id="btn-path" onclick="tog('path','btn-path')">A* PATH</button>
+      <button class="btn on" id="btn-cur" onclick="tog('cur','btn-cur')">CURRENTS</button>
+      <button class="btn on" id="btn-trail" onclick="tog('trail','btn-trail')">TRAIL</button>
+    </div>
+    <div class="br">
+      <button class="btn on" id="btn-slam" onclick="tog('slam','btn-slam')">SLAM MAP</button>
+      <button class="btn on" id="btn-cov" onclick="tog('cov','btn-cov')">COVARIANCE</button>
+      <button class="btn on" id="btn-spill" onclick="tog('spill','btn-spill')">OIL/CHEM</button>
+      <button class="btn on" id="btn-plastic" onclick="tog('plastic','btn-plastic')">PLASTIC</button>
+    </div>
+    <div class="br">
+      <button class="btn on" id="btn-objdet" onclick="tog('objdet','btn-objdet')">OBJ DETECT</button>
+      <button class="btn on" id="btn-depthz" onclick="tog('depthz','btn-depthz')">DEPTH ZONES</button>
+      <button class="btn on" id="btn-minimap" onclick="togMinimap()">MINIMAP</button>
+    </div>
+  </div>
+
+  <!-- Mission Scenario -->
+  <div class="ss">
+    <div class="st">Mission Scenario</div>
+    <div class="pg" id="presets"></div>
+  </div>
+
+  <!-- Kaggle Datasets -->
+  <div class="ss">
+    <div class="st">Kaggle Datasets</div>
+
+    <!-- Dataset 1: Oil Spill Classification -->
+    <div id="ds-panel">
+      <div class="ds-header">
+        <div class="ds-title">🛢 Oil Spill Classifier</div>
+        <div class="ds-badge">300 imgs</div>
+      </div>
+      <div class="ds-sub">Binary CNN · SAR satellite imagery · CC BY 4.0</div>
+      <div class="ds-classes">
+        <span class="ds-cls" style="border-color:rgba(249,115,22,0.5);color:#f97316">oil_spill ×150</span>
+        <span class="ds-cls" style="border-color:rgba(29,222,140,0.4);color:var(--green)">no_oil ×150</span>
+      </div>
+      <div class="ds-stats">
+        <div class="ds-stat">Train<span>240</span></div>
+        <div class="ds-stat">Val<span>30</span></div>
+        <div class="ds-stat">Test<span>30</span></div>
+        <div class="ds-stat">Acc<span id="ds-oil-acc">--</span></div>
+      </div>
+      <div class="ds-sep"></div>
+      <!-- Live confidence bars (simulated from AUV sensor) -->
+      <div style="font-size:7px;color:var(--tx3);margin-bottom:3px;">Live Inference ↓</div>
+      <div class="ds-conf-row">
+        <span class="ds-conf-lbl">oil_spill</span>
+        <div class="ds-conf-bar-bg"><div class="ds-conf-bar" id="ds-bar-oil" style="background:rgba(249,115,22,0.7);width:0%"></div></div>
+        <span class="ds-conf-val" id="ds-val-oil">0%</span>
+      </div>
+      <div class="ds-conf-row">
+        <span class="ds-conf-lbl">no_oil</span>
+        <div class="ds-conf-bar-bg"><div class="ds-conf-bar" id="ds-bar-nooil" style="background:rgba(29,222,140,0.7);width:100%"></div></div>
+        <span class="ds-conf-val" id="ds-val-nooil">100%</span>
+      </div>
+    </div>
+
+    <!-- Dataset 2: Underwater Plastics (ocean_waste) -->
+    <div id="ds-panel" style="margin-top:4px;">
+      <div class="ds-header">
+        <div class="ds-title">♻ Ocean Waste Detector</div>
+        <div class="ds-badge">15 classes</div>
+      </div>
+      <div class="ds-sub">YOLOv5 · Roboflow ocean_waste v1 · CC BY 4.0</div>
+      <div class="ds-classes" id="ds-plastic-classes"></div>
+      <div class="ds-stats">
+        <div class="ds-stat">Train<span>~400</span></div>
+        <div class="ds-stat">Val<span>~50</span></div>
+        <div class="ds-stat">Test<span>~50</span></div>
+        <div class="ds-stat">mAP<span id="ds-map">--</span></div>
+      </div>
+      <div class="ds-sep"></div>
+      <div style="font-size:7px;color:var(--tx3);margin-bottom:3px;">Top detections near AUV ↓</div>
+      <div id="ds-plastic-live"></div>
+    </div>
+  </div>
+
+  <!-- Environmental Sensors -->
+  <div class="ss">
+    <div class="st">Environmental Sensors</div>
+    <div class="alert-strip" id="sensor-strip">
+      <span class="sensor-val sv-ok" id="s-oil">OIL: 0ppm</span>
+      <span class="sensor-val sv-ok" id="s-ph">pH: 7.2</span>
+      <span class="sensor-val sv-ok" id="s-temp">Temp: 18.5°C</span>
+      <span class="sensor-val sv-ok" id="s-sal">Sal: 35‰</span>
+      <span class="sensor-val sv-ok" id="s-turb2">Turb: LOW</span>
+      <span class="sensor-val sv-ok" id="s-wq">WQ: GOOD</span>
+      <span class="sensor-val sv-ok" id="s-plastic">Plastic: 0</span>
+      <span class="sensor-val sv-ok" id="s-chem">Chem: CLEAR</span>
+    </div>
+    <div id="sliders"></div>
+  </div>
+
+  <!-- AI Pipeline -->
+  <div class="ss">
+    <div class="st">AI Pipeline</div>
+    <div class="pl" id="pipeline">
+      <div class="pn" id="pn0"><span class="pnl">Sensor Fusion</span><span class="pnv">EKF active</span></div>
+      <div class="pn" id="pn1"><span class="pnl">SLAM Localiz.</span><span class="pnv">GraphSLAM</span></div>
+      <div class="pn" id="pn2"><span class="pnl">Path Planner</span><span class="pnv">PRM+Dijkstra</span></div>
+      <div class="pn" id="pn3"><span class="pnl">Env Detect</span><span class="pnv">InceptionResV2</span></div>
+      <div class="pn" id="pn4"><span class="pnl">Obj Detect</span><span class="pnv">7-class aquarium</span></div>
+      <div class="pn" id="pn5"><span class="pnl">Decision Mod</span><span class="pnv">Heading cmd</span></div>
+      <div class="pn" id="pn6"><span class="pnl">Safety Sys</span><span class="pnv">RTH monitor</span></div>
+      <div class="pn" id="pn7"><span class="pnl">OpenCV</span><span class="pnv">Edge detect</span></div>
+    </div>
+  </div>
+
+  <!-- Sensor Performance Charts -->
+  <div class="ss">
+    <div class="st">Sensor Performance</div>
+    <div class="chart-lbl">Position Error (m)</div>
+    <div class="cw"><canvas class="mc" id="ce"></canvas></div>
+    <div class="chart-lbl">Fusion Confidence (%)</div>
+    <div class="cw"><canvas class="mc" id="cc"></canvas></div>
+    <div class="chart-lbl">Battery (%)</div>
+    <div class="cw"><canvas class="mc" id="cb"></canvas></div>
+  </div>
+
+  <!-- Mission Log -->
+  <div class="ss" style="flex:1">
+    <div class="st">Mission Log</div>
+    <div id="lg"></div>
+  </div>
+</div>
+
+<!-- ===== BOTTOM BAR ===== -->
+<div id="botbar">
+  <div class="bs">Missions: <span id="bs-m">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Obstacles: <span id="bs-o">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Landmarks: <span id="bs-l">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Spills: <span id="bs-spill">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Plastic: <span id="bs-plastic">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Objects: <span id="bs-obj">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">DVL: <span id="bs-d">LOCK</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Mode: <span id="bs-mode">MISSION</span></div>
+  <div class="tb-sp"></div>
+  <div class="bs" id="bs-place-hint">Click ＋OBSTACLE or ⊕WAYPOINT then click map to place</div>
+</div>
+
+</div><!-- #app -->
+
+<script>
+// ============================================================
+// AUV MISSION CONTROL v11 — Kaggle Dataset Integration + Click-to-Place
+// Datasets:
+//   1. Oil Spill Classification (SAR) — 300 imgs, 2 classes: oil_spill / no_oil
+//   2. Ocean Waste Detector (ocean_waste, Roboflow) — 15 classes, CC BY 4.0
+//      classes: Mask, can, cellphone, electronics, gbottle, glove, metal,
+//               misc, net, pbag, pbottle, plastic, rod, sunglasses, tire
+// ============================================================
+
+// ---- CANVAS SETUP ----
+const cv = document.getElementById('cv');
+const W = 660, H = 478;
+cv.width = W; cv.height = H;
+cv.style.width = '100%'; cv.style.height = '100%';
+const cx = cv.getContext('2d');
+
+const mmCv = document.getElementById('mm-cv');
+const mmCx = mmCv.getContext('2d');
+let minimapVisible = true;
+
+// ---- PLACEMENT MODE ----
+let placeMode = null; // 'obstacle' | 'waypoint' | null
+let ghostX = -999, ghostY = -999;
+
+// Obstacle size control
+const obsSizeSlider = document.getElementById('sl-obs-size');
+const obsSizeVal = document.getElementById('sv-obs-size');
+let currentObsSize = 18;
+obsSizeSlider.addEventListener('input', function(){
+  currentObsSize = parseInt(this.value);
+  obsSizeVal.textContent = this.value;
+});
+
+function togglePlaceMode(mode){
+  if(placeMode === mode){ cancelPlaceMode(); return; }
+  placeMode = mode;
+  const sw = document.getElementById('simwrap');
+  const tooltip = document.getElementById('place-tooltip');
+  const obsBtn = document.getElementById('btn-place-obs');
+  const wpBtn = document.getElementById('btn-place-wp');
+  const cancelBtn = document.getElementById('btn-place-cancel');
+  sw.className = mode === 'obstacle' ? 'mode-obstacle' : 'mode-waypoint';
+  cancelBtn.style.display = 'inline-block';
+  if(mode === 'obstacle'){
+    tooltip.textContent = '● OBSTACLE MODE — click canvas to place';
+    tooltip.className = 'mode-obs visible';
+    obsBtn.className = 'btn red place-active-obs';
+    wpBtn.className = 'btn';
+    document.getElementById('place-hint').textContent = 'OBSTACLE MODE active — click anywhere on map. ESC to cancel.';
+    document.getElementById('bs-place-hint').textContent = '🔴 OBSTACLE MODE — click map to place obstacle';
+  } else {
+    tooltip.textContent = '◎ WAYPOINT MODE — click canvas to place';
+    tooltip.className = 'mode-wp visible';
+    wpBtn.className = 'btn place-active-wp';
+    obsBtn.className = 'btn red';
+    document.getElementById('place-hint').textContent = 'WAYPOINT MODE active — click anywhere on map. ESC to cancel.';
+    document.getElementById('bs-place-hint').textContent = '🟢 WAYPOINT MODE — click map to place waypoint';
+  }
+}
+
+function cancelPlaceMode(){
+  placeMode = null;
+  const sw = document.getElementById('simwrap');
+  sw.className = '';
+  document.getElementById('place-tooltip').className = '';
+  document.getElementById('btn-place-obs').className = 'btn red';
+  document.getElementById('btn-place-wp').className = 'btn';
+  document.getElementById('btn-place-cancel').style.display = 'none';
+  document.getElementById('place-hint').textContent = 'Click a button above then click anywhere on the simulation canvas to place.';
+  document.getElementById('bs-place-hint').textContent = 'Click ＋OBSTACLE or ⊕WAYPOINT then click map to place';
+  ghostX = -999; ghostY = -999;
+}
+
+// Canvas click handler — unified placement + right-click remove
+cv.addEventListener('click', function(e){
+  if(!placeMode) return;
+  const rect = cv.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+
+  if(placeMode === 'obstacle'){
+    // Don't place too close to home or AUV
+    if(distF(mx,my,HOME.x,HOME.y) < 30){log('Too close to home base','warn'); return;}
+    if(distF(mx,my,auv.x,auv.y) < 25){log('Too close to AUV','warn'); return;}
+    // Don't overlap existing obstacles
+    if(obs.some(o => distF(mx,my,o.x,o.y) < o.r + currentObsSize + 6)){log('Overlaps existing obstacle','warn'); return;}
+    if(mx < MG || mx > W-MG || my < MG || my > H-MG){log('Out of bounds','warn'); return;}
+    obs.push({x: mx, y: my, r: currentObsSize, userPlaced: true});
+    if(!isSurfacing && !isReturningHome) replan();
+    log('Obstacle placed at ('+mx.toFixed(0)+','+my.toFixed(0)+') r='+currentObsSize,'warn');
+    updateStats();
+    // Keep mode active for multi-place
+  } else if(placeMode === 'waypoint'){
+    if(obs.some(o => distF(mx,my,o.x,o.y) < o.r + 12)){log('Waypoint inside obstacle','warn'); return;}
+    if(mx < MG || mx > W-MG || my < MG || my > H-MG){log('Out of bounds','warn'); return;}
+    wps.push({x: mx, y: my, userPlaced: true});
+    log('Waypoint WP'+(wps.length)+' placed at ('+mx.toFixed(0)+','+my.toFixed(0)+')','ok');
+    // Keep mode active for multi-place
+  }
+});
+
+// Right-click to remove user-placed obstacles
+cv.addEventListener('contextmenu', function(e){
+  e.preventDefault();
+  const rect = cv.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  const mx = (e.clientX - rect.left) * scaleX;
+  const my = (e.clientY - rect.top) * scaleY;
+  // Find closest user-placed obstacle within 25px
+  let closest = -1, closestD = Infinity;
+  obs.forEach((o, i) => {
+    const d = distF(mx, my, o.x, o.y);
+    if(d < o.r + 8 && d < closestD){closestD = d; closest = i;}
+  });
+  if(closest !== -1){
+    log('Obstacle removed','warn');
+    obs.splice(closest, 1);
+    if(!isSurfacing && !isReturningHome) replan();
+    updateStats();
+  }
+});
+
+// Mouse move — show ghost
+cv.addEventListener('mousemove', function(e){
+  if(!placeMode) return;
+  const rect = cv.getBoundingClientRect();
+  const scaleX = W / rect.width;
+  const scaleY = H / rect.height;
+  ghostX = (e.clientX - rect.left) * scaleX;
+  ghostY = (e.clientY - rect.top) * scaleY;
+});
+cv.addEventListener('mouseleave', function(){ghostX = -999; ghostY = -999;});
+
+// ESC to cancel
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape' && placeMode) cancelPlaceMode();
+});
+
+// ---- ENV STATE ----
+const EDEF = {cur:0.5,curdir:90,wave:0.3,turb:0.5,vis:95,pres:5,sal:35,therm:0,dep:50};
+const E = {...EDEF};
+
+const SLIDERS_CFG = [
+  {k:'cur',   label:'Ocean Current', min:0,max:10,step:0.1},
+  {k:'curdir',label:'Current Dir°',  min:0,max:360,step:1},
+  {k:'wave',  label:'Wave Height',   min:0,max:5,step:0.1},
+  {k:'turb',  label:'Turbulence',    min:0,max:10,step:0.1},
+  {k:'vis',   label:'Visibility%',   min:0,max:100,step:1},
+  {k:'pres',  label:'Pressure atm',  min:1,max:100,step:1},
+  {k:'therm', label:'Therm. Layer',  min:0,max:10,step:0.1},
+  {k:'dep',   label:'Sim Depth m',   min:5,max:3000,step:5},
+];
+function buildSliders(){
+  const cont = document.getElementById('sliders');
+  cont.innerHTML = '';
+  SLIDERS_CFG.forEach(s=>{
+    const d = document.createElement('div'); d.className = 'sr';
+    d.innerHTML = `<span class="sl">${s.label}</span>
+      <input type="range" id="sl-${s.k}" min="${s.min}" max="${s.max}" step="${s.step}" value="${E[s.k]}">
+      <span class="sv" id="sv-${s.k}">${E[s.k]}</span>`;
+    cont.appendChild(d);
+    d.querySelector('input').addEventListener('input', function(){
+      E[s.k] = parseFloat(this.value);
+      document.getElementById('sv-'+s.k).textContent = parseFloat(this.value).toFixed(s.step<1?1:0);
+      updateEnvBadge();
+    });
+  });
+}
+buildSliders();
+
+const PRESETS = [
+  {name:'Calm',      cur:0.5,curdir:90, wave:0.2,turb:0.5,vis:95, pres:5,  sal:35,therm:0, dep:50},
+  {name:'Moderate',  cur:3,  curdir:135,wave:1.5,turb:3,  vis:70, pres:20, sal:35,therm:2, dep:150},
+  {name:'Storm',     cur:7,  curdir:200,wave:4,  turb:8,  vis:30, pres:10, sal:35,therm:1, dep:80},
+  {name:'Arctic',    cur:4,  curdir:0,  wave:2,  turb:4,  vis:45, pres:50, sal:28,therm:7, dep:800},
+  {name:'Deep Rift', cur:6,  curdir:270,wave:0,  turb:6,  vis:10, pres:95, sal:38,therm:10,dep:3000},
+  {name:'Hull Insp.',cur:1,  curdir:90, wave:0.3,turb:1,  vis:85, pres:3,  sal:34,therm:0, dep:15},
+  {name:'Oil Field', cur:2,  curdir:180,wave:1,  turb:2,  vis:55, pres:30, sal:36,therm:3, dep:200},
+  {name:'Reef/Eco',  cur:0.8,curdir:45, wave:0.5,turb:1,  vis:80, pres:8,  sal:34,therm:0, dep:30},
+];
+let activeP = 0;
+function buildPresets(){
+  const cont = document.getElementById('presets');
+  cont.innerHTML = '';
+  PRESETS.forEach((p,i)=>{
+    const b = document.createElement('div'); b.className = 'pr'+(i===0?' a':'');
+    b.id = 'pr'+i; b.textContent = p.name;
+    b.addEventListener('click',()=>setPreset(i));
+    cont.appendChild(b);
+  });
+}
+buildPresets();
+function setPreset(i){
+  activeP = i;
+  document.querySelectorAll('.pr').forEach((p,j)=>p.classList.toggle('a',j===i));
+  const pr = PRESETS[i];
+  Object.keys(pr).forEach(k=>{
+    if(k==='name')return;
+    E[k] = pr[k];
+    const sl=document.getElementById('sl-'+k), sv=document.getElementById('sv-'+k);
+    if(sl)sl.value=pr[k];
+    if(sv)sv.textContent=parseFloat(pr[k]).toFixed(parseFloat(pr[k])>10?0:1);
+  });
+  updateEnvBadge(); replan();
+  log('Preset: '+pr.name,'info');
+  if(i===6){spawnOilSpill(3);log('Oil Field: chemical spills spawned','oil');}
+  if(i===7){spawnPlastic(5);log('Reef preset: plastic debris detected','plastic');}
+}
+function updateEnvBadge(){
+  const s=(E.turb+E.cur+E.wave)/3;
+  const b=document.getElementById('b-env');
+  if(s<1.5){b.textContent='CALM SEA';b.className='badge ok';}
+  else if(s<4){b.textContent='MODERATE';b.className='badge warn';}
+  else if(s<7){b.textContent='ROUGH';b.className='badge warn';}
+  else{b.textContent='EXTREME';b.className='badge err';}
+}
+
+// ---- LAYER TOGGLES ----
+const L = {sonar:true, path:true, cur:true, trail:true, slam:true, cov:true, spill:true, plastic:true, objdet:true, depthz:true};
+function tog(key, btnId){
+  L[key] = !L[key];
+  const btn = document.getElementById(btnId);
+  if(L[key]) btn.classList.add('on'); else btn.classList.remove('on');
+  log((L[key]?'Enabled':'Disabled')+' layer: '+key,'info');
+}
+function togMinimap(){
+  minimapVisible = !minimapVisible;
+  document.getElementById('minimap').style.display = minimapVisible?'block':'none';
+  document.getElementById('btn-minimap').classList.toggle('on', minimapVisible);
+}
+
+// ---- SIMULATION CONSTANTS ----
+const MG = 30, OBR = 18, AR = 9;
+const HOME = {x:70, y:70};
+
+let running = true;
+let frame = 0;
+let missionCount = 0;
+let aiStage = 0;
+
+// ---- BATTERY ----
+let battery = 100;
+let batteryDrain = 0.004;
+let isAtHome = false;
+let isAtSurface = false;
+let waitingForStart = false;
+
+// ---- AUV STATE ----
+let auv = {x:HOME.x,y:HOME.y,vx:0.5,vy:0,hdg:0,trail:[],landmarks:[]};
+
+let obs = [], wps = [], wpIdx = 0;
+let path = [], pathIdx = 0;
+let particles = [], bubbles = [], slamPoses = [];
+let errHist = [], confHist = [], batHist = [];
+let stuckT = 0, stuckX = HOME.x, stuckY = HOME.y;
+
+// ---- SPILL STATE ----
+let oilSpills = [], detectedSpills = 0;
+
+// ---- PLASTIC STATE ----
+let plasticItems = [], collectedPlastic = 0, plasticZones = [];
+
+// ---- SURFACE/HOME STATE ----
+let isSurfacing = false, isReturningHome = false;
+let surfaceTarget = null, surfacePath = [], surfacePathIdx = 0;
+let emergencyMode = false, emergencyReason = '';
+
+// ---- ENV SENSOR READINGS ----
+let oilPPM = 0, phLevel = 7.2, turbidityLevel = 'LOW', chemAlert = false;
+let waterTemp = 18.5, salinityLevel = 35, waterQuality = 'GOOD';
+let slamQuality = 100;
+
+// ======================================================
+// ---- KAGGLE DATASET INTEGRATION ----
+// Dataset 1: Oil Spill (SAR) — 300 images, 2 classes
+// Dataset 2: Ocean Waste (Roboflow ocean_waste v1) — 15 classes
+// ======================================================
+
+// Ocean Waste class metadata from data.yaml
+const OCEAN_WASTE_CLASSES = [
+  {name:'Mask',        color:'rgba(255,100,150',  icon:'😷'},
+  {name:'can',         color:'rgba(200,180,60',   icon:'🥫'},
+  {name:'cellphone',   color:'rgba(100,180,255',  icon:'📱'},
+  {name:'electronics', color:'rgba(80,100,255',   icon:'🔌'},
+  {name:'gbottle',     color:'rgba(80,200,120',   icon:'🍾'},
+  {name:'glove',       color:'rgba(255,200,80',   icon:'🧤'},
+  {name:'metal',       color:'rgba(180,180,180',  icon:'🔩'},
+  {name:'misc',        color:'rgba(140,100,200',  icon:'❓'},
+  {name:'net',         color:'rgba(0,200,200',    icon:'🕸'},
+  {name:'pbag',        color:'rgba(0,220,255',    icon:'🛍'},
+  {name:'pbottle',     color:'rgba(0,180,255',    icon:'🍼'},
+  {name:'plastic',     color:'rgba(22,211,238',   icon:'♻'},
+  {name:'rod',         color:'rgba(200,140,60',   icon:'🪝'},
+  {name:'sunglasses',  color:'rgba(255,180,50',   icon:'🕶'},
+  {name:'tire',        color:'rgba(120,120,120',  icon:'🛞'},
+];
+
+// Build plastic class tags in dataset panel
+(function(){
+  const cont = document.getElementById('ds-plastic-classes');
+  OCEAN_WASTE_CLASSES.forEach(c=>{
+    const s = document.createElement('span');
+    s.className = 'ds-cls';
+    s.style.borderColor = c.color+',0.5)';
+    s.style.color = c.color+',0.9)';
+    s.textContent = c.icon+' '+c.name;
+    cont.appendChild(s);
+  });
+})();
+
+// Simulated model performance (realistic for these dataset types)
+let oilModelAcc = 0;
+let wasteModelMAP = 0;
+setTimeout(()=>{
+  // Animate accuracy loading (simulating model load)
+  let acc = 0, mAP = 0;
+  const interval = setInterval(()=>{
+    acc = Math.min(94.2, acc + 2.1 + Math.random()*1.5);
+    mAP = Math.min(78.5, mAP + 1.8 + Math.random()*1.2);
+    oilModelAcc = acc;
+    wasteModelMAP = mAP;
+    document.getElementById('ds-oil-acc').textContent = acc.toFixed(1)+'%';
+    document.getElementById('ds-map').textContent = mAP.toFixed(1)+'%';
+    if(acc >= 94.2 && mAP >= 78.5) clearInterval(interval);
+  }, 80);
+  log('📊 Oil spill CNN model loaded — SAR dataset (150/150 classes)','data');
+  log('📊 Ocean waste YOLOv5 loaded — 15 class ocean_waste v1','data');
+}, 1200);
+
+// Live oil spill inference (updates when AUV is near spill)
+function updateKaggleInference(){
+  // Oil spill confidence
+  let nearOilConf = 0;
+  oilSpills.forEach(s=>{
+    const d = distF(auv.x,auv.y,s.x,s.y);
+    const range = (s.r+s.spread)*3;
+    if(d < range) nearOilConf = Math.max(nearOilConf, (1 - d/range) * 100);
+  });
+  // Add some sensor noise
+  const oilConf = Math.min(99, nearOilConf + (Math.random()-0.5)*3);
+  const noOilConf = 100 - oilConf;
+
+  const barOil = document.getElementById('ds-bar-oil');
+  const barNoOil = document.getElementById('ds-bar-nooil');
+  const valOil = document.getElementById('ds-val-oil');
+  const valNoOil = document.getElementById('ds-val-nooil');
+  if(barOil){barOil.style.width = oilConf.toFixed(1)+'%'; valOil.textContent = oilConf.toFixed(0)+'%';}
+  if(barNoOil){barNoOil.style.width = noOilConf.toFixed(1)+'%'; valNoOil.textContent = noOilConf.toFixed(0)+'%';}
+
+  // Ocean waste live detections near AUV
+  const liveDiv = document.getElementById('ds-plastic-live');
+  if(!liveDiv) return;
+  const nearPlastic = plasticItems.filter(p=>!p.collected&&p.detected&&distF(auv.x,auv.y,p.x,p.y)<100);
+  if(nearPlastic.length === 0){
+    liveDiv.innerHTML = '<div style="font-size:7px;color:var(--tx3)">scanning…</div>';
+  } else {
+    // Map plastic types to ocean_waste classes
+    const typeMap = {BOTTLE:'pbottle', NET:'net', MICRO:'plastic', BAG:'pbag', DEBRIS:'misc'};
+    liveDiv.innerHTML = nearPlastic.slice(0,4).map(p=>{
+      const cls = OCEAN_WASTE_CLASSES.find(c=>c.name===(typeMap[p.type]||'plastic'))||OCEAN_WASTE_CLASSES[11];
+      const conf = 55 + Math.random()*35;
+      const confCls = conf>80?'obj-high':conf>65?'obj-med':'obj-low';
+      return `<div class="ds-conf-row">
+        <span class="ds-conf-lbl">${cls.icon} ${cls.name}</span>
+        <div class="ds-conf-bar-bg"><div class="ds-conf-bar" style="background:${cls.color},0.7);width:${conf.toFixed(0)}%"></div></div>
+        <span class="ds-conf-val ${confCls}" style="color:unset;background:unset;border:none;padding:0">${conf.toFixed(0)}%</span>
+      </div>`;
+    }).join('');
+  }
+}
+
+// ---- DETECTED OBJECTS (InceptionResNetV2 — aquarium-data-cots) ----
+const OBJ_TYPES = [
+  {type:'FISH',      icon:'🐟', color:'rgba(0,200,255',   cls:'fish',      conf:[72,97]},
+  {type:'JELLYFISH', icon:'🪼', color:'rgba(160,100,255', cls:'jellyfish', conf:[65,93]},
+  {type:'PENGUIN',   icon:'🐧', color:'rgba(80,200,240',  cls:'penguin',   conf:[78,98]},
+  {type:'PUFFIN',    icon:'🦜', color:'rgba(255,170,50',  cls:'puffin',    conf:[60,89]},
+  {type:'SHARK',     icon:'🦈', color:'rgba(255,74,74',   cls:'shark',     conf:[70,96]},
+  {type:'STARFISH',  icon:'⭐', color:'rgba(255,120,60',  cls:'starfish',  conf:[63,91]},
+  {type:'STINGRAY',  icon:'🌊', color:'rgba(29,222,140',  cls:'stingray',  conf:[66,94]},
+];
+let detectedObjects = [];
+let objIdCounter = 0;
+let totalObjDetected = 0;
+let objDetPanelVisible = false;
+let lastDetections = [];
+
+function distF(ax,ay,bx,by){ return Math.sqrt((ax-bx)**2+(ay-by)**2); }
+function clampF(v,lo,hi){ return Math.max(lo,Math.min(hi,v)); }
+function safeNum(v,fb){ return (isFinite(v)&&!isNaN(v))?v:fb; }
+function rnd(a,b){ return a+Math.random()*(b-a); }
+
+function initObs(){
+  obs = [
+    {x:180,y:130,r:OBR},{x:330,y:95,r:OBR},{x:250,y:220,r:OBR},
+    {x:420,y:170,r:22},{x:460,y:280,r:OBR},{x:145,y:265,r:OBR},
+    {x:340,y:310,r:24},{x:220,y:340,r:16},{x:430,y:90,r:16},
+    {x:110,y:190,r:14},{x:500,y:210,r:18},{x:280,y:160,r:12},
+    {x:540,y:320,r:16},{x:380,y:380,r:14},{x:580,y:160,r:14},
+  ];
+}
+function initWPs(){
+  wps = [{x:540,y:65},{x:580,y:380},{x:300,y:300},{x:70,y:380}];
+  wpIdx=0; pathIdx=0;
+}
+function inFree(x,y,extra){
+  extra=extra||0;
+  if(x<MG||x>W-MG||y<MG||y>H-MG)return false;
+  for(const o of obs){if(distF(x,y,o.x,o.y)<o.r+AR+extra+4)return false;}
+  return true;
+}
+function segFree(ax,ay,bx,by){
+  const steps=Math.ceil(distF(ax,ay,bx,by)/4)+1;
+  for(let i=0;i<=steps;i++){
+    const t=i/steps;
+    if(!inFree(ax+t*(bx-ax),ay+t*(by-ay),2))return false;
+  }
+  return true;
+}
+
+// ---- PRM + Dijkstra ----
+function buildPRM(sx,sy,gx,gy,n,crad){
+  const nodes=[{x:safeNum(sx,HOME.x),y:safeNum(sy,HOME.y)},{x:gx,y:gy}];
+  let tries=0; while(nodes.length<n&&tries<n*6){tries++;const x=MG+Math.random()*(W-2*MG),y=MG+Math.random()*(H-2*MG);if(inFree(x,y,3))nodes.push({x,y});}
+  const N=nodes.length,adj=Array.from({length:N},()=>[]);
+  for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){const d=distF(nodes[i].x,nodes[i].y,nodes[j].x,nodes[j].y);if(d<crad&&segFree(nodes[i].x,nodes[i].y,nodes[j].x,nodes[j].y)){adj[i].push({n:j,d});adj[j].push({n:i,d});}}
+  const dist2=Array(N).fill(Infinity);dist2[0]=0;const prev=Array(N).fill(-1),vis2=Array(N).fill(false),pq=[[0,0]];
+  while(pq.length){pq.sort((a,b)=>a[0]-b[0]);const[,u]=pq.shift();if(vis2[u])continue;vis2[u]=true;if(u===1)break;for(const{n:v,d:w}of adj[u]){if(dist2[u]+w<dist2[v]){dist2[v]=dist2[u]+w;prev[v]=u;pq.push([dist2[v],v]);}}}
+  if(!isFinite(dist2[1]))return null;
+  let cur=1;const raw=[];while(cur!==-1){raw.push({x:nodes[cur].x,y:nodes[cur].y});cur=prev[cur];}
+  return shortcut(raw.reverse());
+}
+function replan(){
+  if(isSurfacing||isReturningHome)return;
+  if(wpIdx>=wps.length){path=[];return;}
+  const goal=wps[wpIdx];
+  if(!inFree(goal.x,goal.y,0)){for(let r=5;r<40;r+=5){let f=false;for(let a=0;a<360;a+=30){const nx=goal.x+r*Math.cos(a*Math.PI/180),ny=goal.y+r*Math.sin(a*Math.PI/180);if(inFree(nx,ny,0)){wps[wpIdx]={x:nx,y:ny};f=true;break;}}if(f)break;}}
+  const p=buildPRM(auv.x,auv.y,wps[wpIdx].x,wps[wpIdx].y,200,140);
+  if(!p){path=[];log('No route — escape kick','err');tryEscape();}
+  else{path=p;pathIdx=0;log('Path found: '+path.length+' nodes','ok');}
+}
+function replanHome(){
+  const p=buildPRM(auv.x,auv.y,HOME.x,HOME.y,150,130);
+  if(!p){surfacePath=buildEscapePath(HOME.x,HOME.y);log('Home: zigzag fallback','warn');}
+  else{surfacePath=p;log('Home path: '+surfacePath.length+' nodes','ok');}
+  surfacePathIdx=0;
+}
+function planSurfacePath(){
+  const tx=clampF(auv.x+(Math.random()-0.5)*60,MG+20,W-MG-20),ty=MG+8;
+  surfaceTarget={x:tx,y:ty};
+  const p=buildPRM(auv.x,auv.y,tx,ty,120,110);
+  if(!p){surfacePath=buildEscapePath(tx,ty);log('Surface: zigzag fallback','warn');}
+  else{surfacePath=p;log('Surface path: '+surfacePath.length+' nodes','ok');}
+  surfacePathIdx=0;
+}
+function buildEscapePath(tx,ty){
+  const pts=[{x:auv.x,y:auv.y}];let cx2=auv.x,cy2=auv.y;
+  while(distF(cx2,cy2,tx,ty)>20){
+    const dx=tx-cx2,dy=ty-cy2,dm=Math.sqrt(dx*dx+dy*dy)||1;
+    cy2=clampF(cy2+dy/dm*30,MG+4,H-MG-4);
+    let bx=clampF(cx2+dx/dm*30,MG+4,W-MG-4);
+    for(const off of[0,-40,40,-80,80]){const nx=clampF(cx2+off,MG+4,W-MG-4);if(inFree(nx,cy2,4)){bx=nx;break;}}
+    cx2=bx;pts.push({x:cx2,y:cy2});if(pts.length>60)break;
+  }
+  return pts;
+}
+function shortcut(p){
+  if(p.length<3)return p;const r=[p[0]];let i=0;
+  while(i<p.length-1){let j=p.length-1;while(j>i+1&&!segFree(p[i].x,p[i].y,p[j].x,p[j].y))j--;r.push(p[j]);i=j;}
+  return r;
+}
+function tryEscape(){
+  for(let a=0;a<360;a+=45){
+    const bx=auv.x+70*Math.cos(a*Math.PI/180),by=auv.y+70*Math.sin(a*Math.PI/180);
+    if(inFree(bx,by,0)){path=[{x:auv.x,y:auv.y},{x:bx,y:by}];pathIdx=0;log('Escape injected','warn');return;}
+  }
+}
+
+// ---- OIL SPILL ----
+const SPILL_TYPES=['OIL','ACID','TOXIC','FUEL'];
+function spawnOilSpill(count){
+  for(let i=0;i<(count||1);i++){
+    for(let t=0;t<30;t++){
+      const x=MG+20+Math.random()*(W-2*MG-40),y=MG+20+Math.random()*(H-2*MG-40);
+      if(obs.every(o=>distF(x,y,o.x,o.y)>o.r+20)){
+        const type=SPILL_TYPES[Math.floor(Math.random()*SPILL_TYPES.length)];
+        oilSpills.push({x,y,r:12+Math.random()*18,spread:0,type,age:0,detected:false});break;
+      }
+    }
+  }updateStats();
+}
+function doSpillDrill(){ spawnOilSpill(2); log('🛢 Oil drill activated! 2 spills injected — AUV will detect & map','oil'); }
+
+// ---- PLASTIC ----
+const PLASTIC_TYPES=['BOTTLE','NET','MICRO','BAG','DEBRIS'];
+function spawnPlastic(count){
+  for(let i=0;i<(count||1);i++){
+    for(let t=0;t<30;t++){
+      const x=MG+10+Math.random()*(W-2*MG-20),y=MG+10+Math.random()*(H-2*MG-20);
+      if(obs.every(o=>distF(x,y,o.x,o.y)>o.r+15)){
+        const type=PLASTIC_TYPES[Math.floor(Math.random()*PLASTIC_TYPES.length)];
+        plasticItems.push({x,y,type,collected:false,size:4+Math.random()*8,age:0,detected:false});break;
+      }
+    }
+  }updateStats();
+}
+function doPlasticScan(){ spawnPlastic(3); log('♻ Plastic scan initiated — 3 items marked','plastic'); }
+
+// ---- MARINE OBJECT DETECTION ----
+function spawnDetectedObject(near){
+  const ot = OBJ_TYPES[Math.floor(Math.random()*OBJ_TYPES.length)];
+  let x,y;
+  if(near){x=clampF(auv.x+(Math.random()-0.5)*80,MG+10,W-MG-10);y=clampF(auv.y+(Math.random()-0.5)*80,MG+10,H-MG-10);}
+  else{x=MG+10+Math.random()*(W-2*MG-20);y=MG+10+Math.random()*(H-2*MG-20);}
+  const conf=Math.floor(rnd(ot.conf[0],ot.conf[1]));
+  const obj={x,y,type:ot.type,icon:ot.icon,color:ot.color,cls:ot.cls,conf,age:0,id:objIdCounter++,detected:false};
+  detectedObjects.push(obj);
+  totalObjDetected++;
+  return obj;
+}
+function doObjectScan(){
+  for(let i=0;i<4;i++) spawnDetectedObject(true);
+  log('🔍 InceptionResNetV2 scan — 4 objects classified (aquarium-data-cots)','ok');
+  document.getElementById('obj-panel').classList.add('visible');
+  objDetPanelVisible=true;
+}
+
+// ---- SURFACE / HOME ----
+function doSurface(){
+  if(waitingForStart){log('Press ▶ RUN to restart AUV','warn');return;}
+  if(isReturningHome){log('RTH in progress — cancel first','warn');return;}
+  if(isSurfacing){isSurfacing=false;surfacePath=[];log('Surface ascent cancelled','warn');if(!running)toggleRun();replan();return;}
+  isSurfacing=true;emergencyMode=false;
+  log('▲ Surface ascent initiated','warn');planSurfacePath();if(!running)toggleRun();
+}
+function doReturnHome(){
+  if(waitingForStart){log('Press ▶ RUN to restart','warn');return;}
+  if(isSurfacing){isSurfacing=false;surfacePath=[];}
+  isReturningHome=true;emergencyMode=false;
+  log('⌂ Return to Home initiated — planning path','info');replanHome();if(!running)toggleRun();
+}
+function triggerEmergencyRTH(reason){
+  if(isAtHome||isAtSurface||waitingForStart)return;
+  emergencyMode=true;emergencyReason=reason;isSurfacing=false;isReturningHome=true;
+  log('🚨 EMERGENCY RTH: '+reason,'err');replanHome();
+  const saEl=document.getElementById('safety-alert');
+  document.getElementById('sa-title').textContent='⚠ '+reason;
+  document.getElementById('sa-sub').textContent='EMERGENCY RETURN TO HOME';
+  saEl.classList.add('show');
+  document.getElementById('b-safety').textContent='EMERGENCY';
+  document.getElementById('b-safety').className='badge err pulse';
+  if(!running)toggleRun();
+}
+function clearEmergency(){
+  emergencyMode=false;
+  document.getElementById('safety-alert').classList.remove('show');
+  document.getElementById('b-safety').textContent='SAFE';
+  document.getElementById('b-safety').className='badge ok';
+}
+function onArrivedHome(){
+  isAtHome=true;isReturningHome=false;isSurfacing=false;waitingForStart=true;running=false;
+  auv.vx=0;auv.vy=0;
+  const b=document.getElementById('btn-run');b.textContent='▶ RUN';b.classList.remove('on');
+  document.getElementById('b-sys').textContent='AT HOME';document.getElementById('b-sys').className='badge info';
+  document.getElementById('bs-mode').textContent='DOCKED';clearEmergency();
+  log('⌂ AUV arrived at home base — STOPPED. Press ▶ RUN to resume.','ok');
+  log('Battery: '+battery.toFixed(0)+'% — charging...','bat');
+}
+function onArrivedSurface(){
+  isAtSurface=true;isSurfacing=false;isReturningHome=false;waitingForStart=true;running=false;
+  auv.vx=0;auv.vy=0;
+  const b=document.getElementById('btn-run');b.textContent='▶ RUN';b.classList.remove('on');
+  document.getElementById('b-sys').textContent='AT SURFACE';document.getElementById('b-sys').className='badge info';
+  document.getElementById('bs-mode').textContent='SURFACED';
+  log('▲ AUV at surface — STOPPED. GPS link established. Press ▶ RUN to dive.','ok');
+}
+function toggleRun(){
+  if(waitingForStart){
+    waitingForStart=false;isAtHome=false;isAtSurface=false;running=true;
+    const b=document.getElementById('btn-run');b.textContent='⏸ PAUSE';b.classList.add('on');
+    document.getElementById('b-sys').textContent='NOMINAL';document.getElementById('b-sys').className='badge ok';
+    document.getElementById('bs-mode').textContent='MISSION';
+    if(battery<20)battery=20;replan();log('AUV restarted — resuming mission','ok');return;
+  }
+  running=!running;
+  const b=document.getElementById('btn-run');b.textContent=running?'⏸ PAUSE':'▶ RUN';
+  if(running)b.classList.add('on');else b.classList.remove('on');
+  document.getElementById('b-sys').textContent=running?'NOMINAL':'PAUSED';
+  document.getElementById('b-sys').className='badge '+(running?'ok':'warn');
+  log(running?'Simulation resumed':'Simulation paused',running?'ok':'warn');
+}
+
+// ---- RESET ----
+function doReset(){
+  cancelPlaceMode();
+  auv={x:HOME.x,y:HOME.y,vx:0.5,vy:0,hdg:0,trail:[],landmarks:[]};
+  stuckT=0;stuckX=HOME.x;stuckY=HOME.y;
+  initObs();initWPs();
+  errHist=[];confHist=[];batHist=[];slamPoses=[];
+  bubbles=[];particles=[];missionCount=0;frame=0;
+  oilSpills=[];plasticItems=[];plasticZones=[];detectedObjects=[];lastDetections=[];
+  detectedSpills=0;collectedPlastic=0;totalObjDetected=0;objIdCounter=0;
+  isSurfacing=false;isReturningHome=false;isAtHome=false;isAtSurface=false;
+  waitingForStart=false;emergencyMode=false;surfacePath=[];
+  battery=100;slamQuality=100;oilPPM=0;phLevel=7.2;waterTemp=18.5;salinityLevel=35;
+  running=true;
+  const b=document.getElementById('btn-run');b.textContent='⏸ PAUSE';b.classList.add('on');
+  clearEmergency();
+  document.getElementById('b-sys').textContent='NOMINAL';document.getElementById('b-sys').className='badge ok';
+  document.getElementById('bs-mode').textContent='MISSION';
+  document.getElementById('obj-panel').classList.remove('visible');
+  setPreset(activeP);
+  log('System reset — AUV Mission Control v11','info');
+  updateStats();
+}
+
+// ---- PHYSICS ----
+function tick(){
+  if(!running)return;
+  frame++;
+  aiStage=Math.floor(frame/15)%8;
+
+  if(!isFinite(auv.x)||!isFinite(auv.y)){auv.x=HOME.x;auv.y=HOME.y;auv.vx=0.5;auv.vy=0;log('NaN recovery','err');replan();return;}
+
+  const movingFast=Math.sqrt(auv.vx**2+auv.vy**2)>1.5;
+  const drain=batteryDrain*(movingFast?1.4:1)*(E.turb>5?1.3:1);
+  battery=Math.max(0,battery-drain);
+  updateBatteryUI();
+
+  if(battery<=15&&!isReturningHome&&!isSurfacing&&!isAtHome&&!waitingForStart) triggerEmergencyRTH('LOW BATTERY');
+  if(battery<=0&&!isAtHome&&!isSurfacing&&!waitingForStart){battery=0;triggerEmergencyRTH('BATTERY DEAD');}
+
+  if(stuckT>120&&!isReturningHome&&!isSurfacing&&!waitingForStart){
+    stuckT=0;auv.vx=(Math.random()-0.5)*2.5;auv.vy=(Math.random()-0.5)*2.5;
+    log('AUV stuck! Emergency surface','err');
+    if(!isSurfacing&&!isReturningHome){isSurfacing=true;planSurfacePath();}return;
+  }
+
+  if(isReturningHome){tickReturnHome();tickEnvSensors();updateHUD();updateStats();return;}
+  if(isSurfacing){tickSurface();tickEnvSensors();updateHUD();updateStats();return;}
+
+  let gx=null,gy=null;
+  if(path.length>0&&pathIdx<path.length){gx=path[pathIdx].x;gy=path[pathIdx].y;if(distF(auv.x,auv.y,gx,gy)<10)pathIdx++;}
+  else if(wpIdx<wps.length){gx=wps[wpIdx].x;gy=wps[wpIdx].y;}
+
+  if(wpIdx<wps.length&&distF(auv.x,auv.y,wps[wpIdx].x,wps[wpIdx].y)<16){
+    missionCount++;log('WP'+(wpIdx+1)+' reached ✓','ok');
+    wpIdx++;if(wpIdx>=wps.length)wpIdx=0;
+    replan();updateStats();return;
+  }
+
+  applyPhysics(gx,gy);
+  tickEnvSensors();
+  tickObjectDetection();
+  if(frame%20===0) updateKaggleInference();
+  updateHUD();updateStats();
+}
+
+function tickReturnHome(){
+  let gx=null,gy=null;
+  if(surfacePath.length>0&&surfacePathIdx<surfacePath.length){gx=surfacePath[surfacePathIdx].x;gy=surfacePath[surfacePathIdx].y;if(distF(auv.x,auv.y,gx,gy)<12)surfacePathIdx++;}
+  else{gx=HOME.x;gy=HOME.y;}
+  if(distF(auv.x,auv.y,HOME.x,HOME.y)<16){onArrivedHome();return;}
+  applyPhysics(gx,gy);
+}
+function tickSurface(){
+  let gx=null,gy=null;
+  if(surfacePath.length>0&&surfacePathIdx<surfacePath.length){gx=surfacePath[surfacePathIdx].x;gy=surfacePath[surfacePathIdx].y;if(distF(auv.x,auv.y,gx,gy)<12)surfacePathIdx++;}
+  else if(surfaceTarget){gx=surfaceTarget.x;gy=surfaceTarget.y;}
+  if(auv.y<=MG+12){onArrivedSurface();return;}
+  applyPhysics(gx,gy);
+}
+
+function applyPhysics(gx,gy){
+  let fx=0,fy=0;
+  if(gx!==null){const dg=distF(auv.x,auv.y,gx,gy);if(dg>0){fx+=(gx-auv.x)/dg*2.2;fy+=(gy-auv.y)/dg*2.2;}}
+  for(const o of obs){const d=distF(auv.x,auv.y,o.x,o.y),inf=o.r+40;if(d<inf&&d>0){const k=4*(inf-d)/inf;fx-=(o.x-auv.x)/d*k;fy-=(o.y-auv.y)/d*k;}}
+  const bm=MG+18;
+  if(auv.x<bm)fx+=3.5*(bm-auv.x)/bm;if(auv.x>W-bm)fx-=3.5*(auv.x-(W-bm))/bm;
+  if(auv.y<bm)fy+=3.5*(bm-auv.y)/bm;if(auv.y>H-bm)fy-=3.5*(auv.y-(H-bm))/bm;
+  const crad=E.curdir*Math.PI/180;
+  fx+=Math.cos(crad)*E.cur*0.032;fy+=Math.sin(crad)*E.cur*0.032;
+  fx+=(Math.random()-0.5)*E.turb*0.065;fy+=(Math.random()-0.5)*E.turb*0.065;
+  const fm=Math.sqrt(fx*fx+fy*fy)||0.01;
+  const tspd=Math.min(2.4,fm*0.65+0.35),nx2=fx/fm,ny2=fy/fm;
+  auv.vx=auv.vx*0.72+nx2*tspd*0.28;auv.vy=auv.vy*0.72+ny2*tspd*0.28;
+  const vmag=Math.sqrt(auv.vx**2+auv.vy**2);
+  if(vmag>2.4){auv.vx*=2.4/vmag;auv.vy*=2.4/vmag;}
+  auv.x+=auv.vx;auv.y+=auv.vy;
+  auv.x=safeNum(clampF(auv.x,MG,W-MG),HOME.x);auv.y=safeNum(clampF(auv.y,MG,H-MG),HOME.y);
+  auv.vx=safeNum(auv.vx,0.5);auv.vy=safeNum(auv.vy,0);
+  for(let it=0;it<12;it++)for(const o of obs){
+    const d=distF(auv.x,auv.y,o.x,o.y),md=o.r+AR+2;
+    if(d<md&&d>0.01){const nxx=(auv.x-o.x)/d,nyy=(auv.y-o.y)/d;auv.x=o.x+nxx*md;auv.y=o.y+nyy*md;const dot=auv.vx*nxx+auv.vy*nyy;if(dot<0){auv.vx-=1.4*dot*nxx;auv.vy-=1.4*dot*nyy;}}
+  }
+  auv.x=clampF(auv.x,MG,W-MG);auv.y=clampF(auv.y,MG,H-MG);
+  auv.hdg=safeNum(Math.atan2(auv.vy,auv.vx)*180/Math.PI,0);
+
+  if(distF(auv.x,auv.y,stuckX,stuckY)<2.5)stuckT++;
+  else{stuckT=0;stuckX=auv.x;stuckY=auv.y;}
+
+  if(frame%2===0){auv.trail.push({x:auv.x,y:auv.y});if(auv.trail.length>250)auv.trail.shift();}
+
+  if(frame%25===0){
+    for(const o of obs){if(distF(auv.x,auv.y,o.x,o.y)<90&&auv.landmarks.every(l=>distF(l.x,l.y,o.x,o.y)>5))auv.landmarks.push({x:o.x+(Math.random()*4-2),y:o.y+(Math.random()*4-2)});}
+    slamQuality=Math.min(100,55+auv.landmarks.length*3);
+  }
+  if(frame%18===0){slamPoses.push({x:auv.x,y:auv.y});if(slamPoses.length>100)slamPoses.shift();}
+
+  if(frame%3===0&&E.cur>0.3)particles.push({x:Math.random()*W,y:Math.random()*H,life:50+Math.random()*50});
+  particles=particles.filter(p=>{p.x+=Math.cos(E.curdir*Math.PI/180)*E.cur*0.5;p.y+=Math.sin(E.curdir*Math.PI/180)*E.cur*0.5;p.life--;return p.life>0&&p.x>0&&p.x<W&&p.y>0&&p.y<H;});
+  if(E.pres>50&&frame%5===0)bubbles.push({x:MG+Math.random()*(W-2*MG),y:H-MG,life:35+Math.random()*35});
+  bubbles=bubbles.filter(b=>{b.y-=0.7+Math.random()*0.3;b.life--;return b.life>0;});
+
+  oilSpills.forEach(s=>{
+    s.age++;s.spread=Math.min(s.r*1.8,s.spread+0.015);
+    s.x=clampF(s.x+Math.cos(E.curdir*Math.PI/180)*E.cur*0.02,MG,W-MG);
+    s.y=clampF(s.y+Math.sin(E.curdir*Math.PI/180)*E.cur*0.02,MG,H-MG);
+    if(!s.detected&&distF(auv.x,auv.y,s.x,s.y)<75){s.detected=true;detectedSpills++;log('⚠ '+s.type+' spill detected! [oil_spill CNN: triggered]','oil');}
+  });
+
+  plasticItems.forEach(p=>{
+    p.age++;
+    if(!p.collected){
+      p.x=clampF(p.x+Math.cos(E.curdir*Math.PI/180)*E.cur*0.01*(Math.random()+0.5),MG,W-MG);
+      p.y=clampF(p.y+Math.sin(E.curdir*Math.PI/180)*E.cur*0.01*(Math.random()+0.5),MG,H-MG);
+      if(!p.detected&&distF(auv.x,auv.y,p.x,p.y)<65){
+        p.detected=true;
+        const typeMap={BOTTLE:'pbottle',NET:'net',MICRO:'plastic',BAG:'pbag',DEBRIS:'misc'};
+        const dsClass = typeMap[p.type]||'plastic';
+        log('♻ '+p.type+' [ocean_waste: '+dsClass+'] detected','plastic');
+        if(plasticZones.every(z=>distF(z.x,z.y,p.x,p.y)>30))plasticZones.push({x:p.x,y:p.y,density:1});
+        else plasticZones.forEach(z=>{if(distF(z.x,z.y,p.x,p.y)<30)z.density++;});
+      }
+      if(p.detected&&p.type!=='NET'&&distF(auv.x,auv.y,p.x,p.y)<18){p.collected=true;collectedPlastic++;log('♻ '+p.type+' collected! Total: '+collectedPlastic,'plastic');}
+    }
+  });
+}
+
+// ---- AI OBJECT DETECTION ----
+function tickObjectDetection(){
+  if(frame%60===0&&L.objdet){
+    const sr=70*(E.vis/100);
+    detectedObjects.forEach(o=>{
+      if(!o.detected&&distF(auv.x,auv.y,o.x,o.y)<sr){
+        o.detected=true;log('🤖 '+o.icon+' '+o.type+' detected ('+o.conf+'% conf)','ok');
+        if(o.type==='SHARK'&&distF(auv.x,auv.y,o.x,o.y)<50)log('⚠ SHARK in proximity — sonar ping elevated','warn');
+      }
+    });
+    if(Math.random()<0.015&&detectedObjects.length<20){
+      const obj=spawnDetectedObject(Math.random()<0.6);
+      if(distF(auv.x,auv.y,obj.x,obj.y)<80){obj.detected=true;log('🤖 '+obj.icon+' '+obj.type+' auto-detected ('+obj.conf+'%)','ok');}
+    }
+  }
+  if(L.objdet){lastDetections=detectedObjects.filter(o=>o.detected&&distF(auv.x,auv.y,o.x,o.y)<100).slice(-5);updateObjPanel();}
+  detectedObjects=detectedObjects.filter(o=>{o.age++;return o.age<1800;});
+}
+function updateObjPanel(){
+  const list=document.getElementById('obj-list');
+  if(lastDetections.length===0){list.innerHTML='<div style="font-size:8px;color:#2a4a60">scanning...</div>';return;}
+  list.innerHTML=lastDetections.map(o=>{
+    const cls=o.conf>85?'obj-high':o.conf>70?'obj-med':'obj-low';
+    return `<div class="obj-item"><span class="obj-name">${o.icon} ${o.type}</span><span class="obj-conf ${cls}">${o.conf}%</span></div>`;
+  }).join('');
+  document.getElementById('obj-panel').classList.add('visible');
+}
+
+// ---- ENV SENSOR READINGS ----
+function tickEnvSensors(){
+  let nearOil=0;
+  oilSpills.forEach(s=>{const d=distF(auv.x,auv.y,s.x,s.y);if(d<(s.r+s.spread)*2.5)nearOil+=Math.max(0,300*(1-d/((s.r+s.spread)*2.5)));});
+  oilPPM=Math.round(safeNum(nearOil+E.turb*0.5,0));
+
+  let acidEff=0;
+  oilSpills.filter(s=>s.type==='ACID').forEach(s=>{const d=distF(auv.x,auv.y,s.x,s.y);if(d<80)acidEff+=1.8*(1-d/80);});
+  phLevel=safeNum(clampF(7.2-acidEff+(Math.random()-0.5)*0.04,4.5,8.5),7.2);
+  waterTemp=safeNum(clampF(18.5-(E.dep/3000)*14+E.therm*0.4+(Math.random()-0.5)*0.1,-2,32),18.5);
+  salinityLevel=safeNum(clampF(E.sal+(E.dep/3000)*2+(Math.random()-0.5)*0.05,0,40),35);
+  const turbVal=E.turb/10;
+  turbidityLevel=turbVal<0.3?'LOW':turbVal<0.6?'MED':turbVal<0.85?'HIGH':'CRITICAL';
+  const wqScore=100-oilPPM*0.3-(8.5-phLevel)*8-(turbVal*20)-(oilSpills.some(s=>s.type==='TOXIC'&&distF(auv.x,auv.y,s.x,s.y)<80)?25:0);
+  waterQuality=wqScore>80?'GOOD':wqScore>55?'FAIR':wqScore>30?'POOR':'CRITICAL';
+  chemAlert=oilSpills.some(s=>s.type==='TOXIC'&&distF(auv.x,auv.y,s.x,s.y)<60);
+
+  const setS=(id,txt,cls)=>{const e=document.getElementById(id);if(e){e.textContent=txt;e.className='sensor-val '+cls;}};
+  setS('s-oil','OIL: '+oilPPM+'ppm',oilPPM>50?'sv-err':oilPPM>10?'sv-warn':'sv-ok');
+  setS('s-ph','pH: '+phLevel.toFixed(1),phLevel<6?'sv-err':phLevel<6.8?'sv-warn':'sv-ok');
+  setS('s-temp','Temp: '+waterTemp.toFixed(1)+'°C',waterTemp<2||waterTemp>30?'sv-err':waterTemp<5||waterTemp>28?'sv-warn':'sv-ok');
+  setS('s-sal','Sal: '+salinityLevel.toFixed(1)+'‰',salinityLevel<28||salinityLevel>38?'sv-warn':'sv-ok');
+  setS('s-turb2','Turb: '+turbidityLevel,turbidityLevel==='CRITICAL'?'sv-err':turbidityLevel==='HIGH'?'sv-warn':'sv-ok');
+  setS('s-wq','WQ: '+waterQuality,waterQuality==='CRITICAL'?'sv-err':waterQuality==='POOR'?'sv-err':waterQuality==='FAIR'?'sv-warn':'sv-ok');
+  const plasticNear=plasticItems.filter(p=>!p.collected&&p.detected).length;
+  setS('s-plastic','Plastic: '+plasticNear,plasticNear>5?'sv-err':plasticNear>2?'sv-warn':'sv-ok');
+  setS('s-chem',chemAlert?'Chem: ALERT!':'Chem: CLEAR',chemAlert?'sv-err':'sv-ok');
+
+  const oilBadge=document.getElementById('b-oil');
+  if(oilPPM>50||chemAlert){oilBadge.textContent='OIL ALERT';oilBadge.className='badge err';}
+  else if(oilPPM>10){oilBadge.textContent='OIL WARN';oilBadge.className='badge warn';}
+  else{oilBadge.textContent='OIL CLEAR';oilBadge.className='badge ok';}
+
+  const plBadge=document.getElementById('b-plastic');
+  const uncollected=plasticItems.filter(p=>!p.collected).length;
+  if(uncollected>5){plBadge.textContent='PLASTIC: '+uncollected;plBadge.className='badge err';}
+  else if(uncollected>0){plBadge.textContent='PLASTIC: '+uncollected;plBadge.className='badge warn';}
+  else{plBadge.textContent='PLASTIC CLEAR';plBadge.className='badge ok';}
+}
+
+// ---- HUD ----
+function updateHUD(){
+  const posErr=safeNum(E.turb*0.28+E.pres*0.018+(100-E.vis)*0.035,0);
+  const fusConf=safeNum(Math.max(20,100-E.turb*4-E.pres*0.25-(100-E.vis)*0.28),100);
+  const spd=safeNum(Math.sqrt(auv.vx**2+auv.vy**2),0);
+  const setH=(id,txt,cls)=>{const e=document.getElementById(id);if(e){e.textContent=txt;if(cls!==undefined)e.className='hv'+cls;}};
+  setH('h-err',posErr.toFixed(2)+'m',posErr>3?' c':posErr>1?' w':'');
+  setH('h-conf',fusConf.toFixed(0)+'%',fusConf<40?' c':fusConf<70?' w':'');
+  setH('h-spd',spd.toFixed(2)+'m/s','');
+  setH('h-hdg',((auv.hdg+360)%360).toFixed(0)+'°','');
+  setH('h-dep',Math.round(E.dep)+'m','');
+  setH('h-wps',isReturningHome?'HOME↩':isSurfacing?'SURF↑':wpIdx+'/'+wps.length,'');
+  setH('h-temp',waterTemp.toFixed(1)+'°',waterTemp<2||waterTemp>30?' c':waterTemp<5?' w':'');
+  setH('h-ph',phLevel.toFixed(1),phLevel<6?' c':phLevel<6.8?' w':'');
+  setH('h-sal',salinityLevel.toFixed(0)+'‰','');
+  setH('h-turb',turbidityLevel,turbidityLevel==='CRITICAL'?' c':turbidityLevel==='HIGH'?' w':'');
+  setH('h-wq',waterQuality,waterQuality==='CRITICAL'||waterQuality==='POOR'?' c':waterQuality==='FAIR'?' w':'');
+
+  errHist.push(posErr);if(errHist.length>80)errHist.shift();
+  confHist.push(fusConf);if(confHist.length>80)confHist.shift();
+  batHist.push(battery);if(batHist.length>80)batHist.shift();
+  drawMiniChart('ce',errHist,'rgba(255,74,74,0.85)',0,10);
+  drawMiniChart('cc',confHist,'rgba(29,222,140,0.85)',0,100);
+  drawMiniChart('cb',batHist,'rgba(0,212,255,0.85)',0,100);
+  for(let i=0;i<8;i++){const el=document.getElementById('pn'+i);if(el)el.className='pn'+(aiStage===i?' act':'');}
+}
+
+function updateBatteryUI(){
+  const pct=Math.max(0,Math.min(100,battery));
+  const inner=document.getElementById('bat-bar-inner');
+  const pctEl=document.getElementById('bat-pct');
+  inner.style.width=pct+'%';
+  const col=pct>30?'#1dde8c':pct>15?'#f5a623':'#ff4a4a';
+  inner.style.background=col;pctEl.textContent=pct.toFixed(0)+'%';pctEl.style.color=col;
+  batHist.push(pct);
+}
+
+function updateStats(){
+  const s=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
+  s('bs-m',missionCount);s('bs-o',obs.length);s('bs-l',auv.landmarks.length);
+  s('bs-spill',detectedSpills);s('bs-plastic',collectedPlastic);s('bs-obj',totalObjDetected);
+  s('bs-d',E.pres>80?'DEGRADED':'LOCK');
+  if(!isSurfacing&&!isReturningHome)s('b-mis','MISSION '+(wpIdx+1));
+  else if(isReturningHome)s('b-mis','RTH');
+  else s('b-mis','SURFACING');
+  const sl=document.getElementById('b-slam');
+  if(sl){sl.textContent='SLAM '+slamQuality.toFixed(0)+'%';sl.className='badge '+(slamQuality>70?'info':slamQuality>40?'warn':'err');}
+  const modeLabel=waitingForStart?'STOPPED':isAtHome?'DOCKED':isAtSurface?'SURFACED':isReturningHome?'RTH':isSurfacing?'SURFACING':'MISSION';
+  s('bs-mode',modeLabel);
+}
+
+// ======================================================
+// ---- RENDER ----
+// ======================================================
+function waterColor(){
+  const v=E.vis/100,t=Math.min(1,E.turb/10),dp=Math.min(1,E.dep/3000);
+  let r=Math.round(2+t*10),g=Math.round(12+v*10-t*5),b2=Math.round(24+v*25+dp*18-t*8);
+  if(oilPPM>30){r=Math.min(255,r+Math.round(oilPPM*0.12));g=Math.max(0,g-Math.round(oilPPM*0.04));}
+  return `rgb(${r},${g},${b2})`;
+}
+
+function render(){
+  cx.clearRect(0,0,W,H);
+  cx.fillStyle=waterColor();cx.fillRect(0,0,W,H);
+
+  if(E.vis<80){cx.fillStyle=`rgba(3,8,18,${(100-E.vis)/100*0.5})`;cx.fillRect(0,0,W,H);}
+
+  // ---- DEPTH ZONES ----
+  if(L.depthz){
+    const dg=cx.createLinearGradient(0,0,0,H);
+    dg.addColorStop(0,'rgba(0,80,160,0.12)');dg.addColorStop(0.33,'rgba(0,50,120,0.08)');
+    dg.addColorStop(0.66,'rgba(0,30,80,0.06)');dg.addColorStop(1,'rgba(0,10,40,0.14)');
+    cx.fillStyle=dg;cx.fillRect(0,0,W,H);
+    [0.33,0.66].forEach(fy=>{cx.strokeStyle='rgba(0,100,180,0.12)';cx.lineWidth=0.5;cx.setLineDash([12,8]);cx.beginPath();cx.moveTo(0,fy*H);cx.lineTo(W,fy*H);cx.stroke();cx.setLineDash([]);});
+  }
+
+  // Surface zone
+  const sfH=18;
+  const sfg=cx.createLinearGradient(0,0,0,sfH);
+  sfg.addColorStop(0,'rgba(10,60,100,0.9)');sfg.addColorStop(1,'rgba(2,12,24,0)');
+  cx.fillStyle=sfg;cx.fillRect(0,0,W,sfH);
+  cx.strokeStyle='rgba(100,200,255,0.3)';cx.lineWidth=1;cx.setLineDash([8,4]);
+  cx.beginPath();cx.moveTo(0,sfH);cx.lineTo(W,sfH);cx.stroke();cx.setLineDash([]);
+  cx.fillStyle='rgba(100,200,255,0.35)';cx.font='7px Share Tech Mono,monospace';cx.fillText('SURFACE',5,12);
+
+  // Waves
+  if(E.wave>0.3){
+    cx.strokeStyle=`rgba(100,180,255,${Math.min(0.25,E.wave*0.05)})`;cx.lineWidth=0.5;cx.setLineDash([5,7]);
+    for(let i=0;i<3;i++){const y=8+i*5+Math.sin(frame*0.04+i)*E.wave*1.5;cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke();}
+    cx.setLineDash([]);
+  }
+
+  // Thermal layer
+  if(E.therm>0){
+    const ty=H*0.35+E.therm*5;
+    const tg=cx.createLinearGradient(0,ty-12,0,ty+12);
+    tg.addColorStop(0,'rgba(220,130,40,0.1)');tg.addColorStop(1,'rgba(40,90,200,0.08)');
+    cx.fillStyle=tg;cx.fillRect(0,ty-12,W,24);
+    cx.strokeStyle='rgba(200,155,70,0.25)';cx.lineWidth=0.7;cx.setLineDash([6,4]);
+    cx.beginPath();cx.moveTo(0,ty);cx.lineTo(W,ty);cx.stroke();cx.setLineDash([]);
+    cx.fillStyle='rgba(200,155,70,0.5)';cx.font='7px monospace';cx.fillText('THERMOCLINE Δ'+(E.therm*3).toFixed(0)+'°C',6,ty-3);
+  }
+
+  // Bubbles
+  cx.fillStyle='rgba(140,200,255,0.2)';
+  for(const b of bubbles){cx.beginPath();cx.arc(b.x,b.y,1.5,0,Math.PI*2);cx.fill();}
+
+  // Current particles
+  if(L.cur){
+    cx.fillStyle='rgba(80,150,255,0.28)';
+    for(const p of particles){cx.beginPath();cx.arc(p.x,p.y,1.2,0,Math.PI*2);cx.fill();}
+    if(E.cur>0.2){
+      const px=W-55,py=H-55,len=18,r=E.curdir*Math.PI/180;
+      cx.strokeStyle='rgba(80,190,255,0.6)';cx.lineWidth=1.2;
+      cx.beginPath();cx.moveTo(px,py);cx.lineTo(px+Math.cos(r)*len,py+Math.sin(r)*len);cx.stroke();
+      cx.fillStyle='rgba(80,190,255,0.5)';cx.font='7px monospace';cx.fillText(E.cur.toFixed(1)+'kn',px-18,py+14);
+    }
+  }
+
+  // ---- OIL/CHEM SPILLS ----
+  if(L.spill){
+    oilSpills.forEach(s=>{
+      const totalR=s.r+s.spread;
+      const spillColors={OIL:'rgba(60,30,0',ACID:'rgba(80,180,0',TOXIC:'rgba(180,0,80',FUEL:'rgba(100,40,0'};
+      const sc=spillColors[s.type]||'rgba(60,30,0';
+      const sg2=cx.createRadialGradient(s.x,s.y,0,s.x,s.y,totalR);
+      sg2.addColorStop(0,sc+',0.55)');sg2.addColorStop(0.5,sc+',0.28)');sg2.addColorStop(1,sc+',0)');
+      cx.fillStyle=sg2;cx.beginPath();cx.arc(s.x,s.y,totalR,0,Math.PI*2);cx.fill();
+      if(s.type==='OIL'||s.type==='FUEL'){
+        const sh=cx.createRadialGradient(s.x-3,s.y-3,0,s.x,s.y,totalR*0.7);
+        sh.addColorStop(0,'rgba(150,220,255,0.1)');sh.addColorStop(0.4,'rgba(200,150,255,0.06)');sh.addColorStop(1,'rgba(0,0,0,0)');
+        cx.fillStyle=sh;cx.beginPath();cx.arc(s.x,s.y,totalR*0.7,0,Math.PI*2);cx.fill();
+      }
+      if(s.detected){
+        cx.strokeStyle=s.type==='TOXIC'?'rgba(255,50,150,0.55)':'rgba(255,140,0,0.55)';
+        cx.lineWidth=1.2;cx.setLineDash([4,3]);cx.beginPath();cx.arc(s.x,s.y,totalR+8,0,Math.PI*2);cx.stroke();cx.setLineDash([]);
+        const pulse=(frame%30)/30;
+        cx.strokeStyle=`rgba(255,140,0,${0.35*(1-pulse)})`;cx.lineWidth=0.8;
+        cx.beginPath();cx.arc(s.x,s.y,totalR+10+pulse*22,0,Math.PI*2);cx.stroke();
+      }
+      cx.fillStyle=s.detected?'rgba(255,140,0,0.85)':'rgba(180,100,0,0.4)';
+      cx.font='bold 7px monospace';cx.fillText(s.type,s.x-12,s.y-totalR-4);
+    });
+  }
+
+  // ---- PLASTIC ----
+  if(L.plastic){
+    const pcols={BOTTLE:'rgba(0,200,255',NET:'rgba(180,180,0',MICRO:'rgba(255,100,200',BAG:'rgba(150,255,200',DEBRIS:'rgba(200,200,100'};
+    plasticItems.forEach(p=>{
+      if(p.collected)return;
+      const pc=pcols[p.type]||'rgba(0,200,255';const alpha=p.detected?0.85:0.3;
+      cx.fillStyle=pc+','+alpha+')';
+      if(p.type==='NET'){cx.strokeStyle=pc+','+alpha+')';cx.lineWidth=1;cx.beginPath();for(let i=0;i<4;i++){cx.moveTo(p.x-p.size+i*p.size*0.67,p.y-p.size);cx.lineTo(p.x-p.size+i*p.size*0.67,p.y+p.size);cx.moveTo(p.x-p.size,p.y-p.size+i*p.size*0.67);cx.lineTo(p.x+p.size,p.y-p.size+i*p.size*0.67);}cx.stroke();}
+      else if(p.type==='MICRO'){for(let i=0;i<5;i++){cx.beginPath();cx.arc(p.x+(i-2)*3,p.y,1.2,0,Math.PI*2);cx.fill();}}
+      else{cx.beginPath();cx.arc(p.x,p.y,p.size,0,Math.PI*2);cx.fill();}
+      if(p.detected){cx.strokeStyle=pc+',0.65)';cx.lineWidth=0.8;cx.setLineDash([3,2]);cx.beginPath();cx.arc(p.x,p.y,p.size+5,0,Math.PI*2);cx.stroke();cx.setLineDash([]);cx.fillStyle=pc+',0.8)';cx.font='7px monospace';cx.fillText(p.type,p.x-10,p.y-p.size-3);}
+    });
+    plasticZones.forEach(z=>{
+      const d=Math.min(z.density,5)/5;
+      cx.strokeStyle=`rgba(0,255,200,${0.25+d*0.35})`;cx.lineWidth=1;cx.setLineDash([2,2]);
+      cx.beginPath();cx.arc(z.x,z.y,20+d*15,0,Math.PI*2);cx.stroke();cx.setLineDash([]);
+      cx.fillStyle='rgba(0,255,200,0.65)';cx.font='bold 7px monospace';cx.fillText('ZONE',z.x-10,z.y+3);cx.fillText('ρ'+z.density,z.x-6,z.y+11);
+    });
+  }
+
+  // ---- DETECTED OBJECTS ----
+  if(L.objdet){
+    detectedObjects.forEach(o=>{
+      if(!o.detected)return;
+      const alpha=Math.max(0.2,1-(o.age/1800));
+      cx.fillStyle=o.color+','+alpha*0.4+')';cx.strokeStyle=o.color+','+alpha*0.75+')';cx.lineWidth=1;
+      cx.beginPath();cx.arc(o.x,o.y,6,0,Math.PI*2);cx.fill();cx.stroke();
+      cx.strokeStyle=o.color+','+alpha*0.35+')';cx.lineWidth=0.7;cx.setLineDash([2,2]);
+      cx.beginPath();cx.arc(o.x,o.y,10+(o.conf/100)*8,0,Math.PI*2);cx.stroke();cx.setLineDash([]);
+      cx.fillStyle=o.color+','+alpha*0.9+')';cx.font='bold 7px monospace';cx.fillText(o.icon+' '+o.type,o.x+8,o.y-6);
+      cx.font='6px monospace';cx.fillText(o.conf+'%',o.x+8,o.y+3);
+      const bs=8+o.conf/20;cx.strokeStyle=o.color+','+alpha*0.5+')';cx.lineWidth=0.6;cx.strokeRect(o.x-bs,o.y-bs,bs*2,bs*2);
+    });
+  }
+
+  // ---- SLAM POSE GRAPH ----
+  if(L.slam&&slamPoses.length>1){
+    cx.strokeStyle='rgba(130,90,255,0.22)';cx.lineWidth=0.7;cx.setLineDash([3,4]);
+    cx.beginPath();cx.moveTo(slamPoses[0].x,slamPoses[0].y);
+    for(let i=1;i<slamPoses.length;i++)cx.lineTo(slamPoses[i].x,slamPoses[i].y);
+    cx.stroke();cx.setLineDash([]);
+    for(const lm of auv.landmarks){
+      cx.strokeStyle='rgba(130,90,255,0.6)';cx.lineWidth=0.8;cx.beginPath();cx.arc(lm.x,lm.y,3,0,Math.PI*2);cx.stroke();
+      if(distF(auv.x,auv.y,lm.x,lm.y)<95){cx.strokeStyle='rgba(130,90,255,0.1)';cx.lineWidth=0.4;cx.beginPath();cx.moveTo(auv.x,auv.y);cx.lineTo(lm.x,lm.y);cx.stroke();}
+    }
+    cx.fillStyle='rgba(130,90,255,0.45)';cx.font='7px monospace';cx.fillText('SLAM '+slamQuality.toFixed(0)+'%',W-68,H-6);
+  }
+
+  // ---- COVARIANCE ELLIPSE ----
+  if(L.cov){
+    const rx=10+E.turb*2.8+E.pres*0.09+(100-E.vis)*0.045,ry=rx*0.6;
+    cx.strokeStyle='rgba(250,195,50,0.35)';cx.lineWidth=0.8;cx.setLineDash([3,3]);
+    cx.beginPath();cx.ellipse(auv.x,auv.y,rx,ry,auv.hdg*Math.PI/180,0,Math.PI*2);cx.stroke();cx.setLineDash([]);
+    cx.strokeStyle='rgba(250,195,50,0.6)';cx.lineWidth=0.5;
+    cx.beginPath();cx.ellipse(auv.x,auv.y,rx*0.5,ry*0.5,auv.hdg*Math.PI/180,0,Math.PI*2);cx.stroke();
+    cx.strokeStyle='rgba(250,195,50,0.4)';cx.lineWidth=0.5;
+    cx.beginPath();cx.moveTo(auv.x-rx*0.3,auv.y);cx.lineTo(auv.x+rx*0.3,auv.y);cx.moveTo(auv.x,auv.y-ry*0.3);cx.lineTo(auv.x,auv.y+ry*0.3);cx.stroke();
+    cx.fillStyle='rgba(250,195,50,0.6)';cx.font='7px monospace';cx.fillText('COV',auv.x+rx+2,auv.y-2);
+  }
+
+  // ---- HOME BASE ----
+  {
+    const hpulse=1+Math.sin(frame*0.07)*0.3;
+    cx.strokeStyle=isReturningHome?'rgba(0,212,255,0.9)':'rgba(0,212,255,0.45)';
+    cx.lineWidth=1.2;cx.setLineDash([3,3]);cx.beginPath();cx.arc(HOME.x,HOME.y,14*hpulse,0,Math.PI*2);cx.stroke();cx.setLineDash([]);
+    cx.fillStyle=isReturningHome?'rgba(0,212,255,0.25)':'rgba(0,212,255,0.1)';
+    cx.beginPath();cx.arc(HOME.x,HOME.y,12,0,Math.PI*2);cx.fill();
+    cx.fillStyle=isReturningHome?'rgba(0,212,255,0.9)':'rgba(0,212,255,0.55)';
+    cx.font='bold 10px monospace';cx.fillText('⌂',HOME.x-5,HOME.y+4);
+    cx.font='6px monospace';cx.fillText('HOME',HOME.x-9,HOME.y+16);
+  }
+
+  // ---- SURFACE / RTH PATH ----
+  if((isSurfacing||isReturningHome)&&surfacePath.length>1){
+    const pulse=0.5+0.5*Math.sin(frame*0.1);
+    const pathCol=isReturningHome?`rgba(0,212,255,${0.5+pulse*0.3})`:`rgba(255,200,50,${0.5+pulse*0.3})`;
+    cx.strokeStyle=pathCol;cx.lineWidth=1.4;cx.setLineDash([6,4]);
+    cx.beginPath();cx.moveTo(auv.x,auv.y);
+    for(let i=surfacePathIdx;i<surfacePath.length;i++)cx.lineTo(surfacePath[i].x,surfacePath[i].y);
+    cx.stroke();cx.setLineDash([]);
+    for(let i=surfacePathIdx;i<surfacePath.length;i++){cx.fillStyle=isReturningHome?'rgba(0,212,255,0.45)':'rgba(255,200,50,0.45)';cx.beginPath();cx.arc(surfacePath[i].x,surfacePath[i].y,2.5,0,Math.PI*2);cx.fill();}
+    cx.fillStyle=pathCol.replace(/,[0-9.]+\)$/,',0.8)');
+    cx.font='bold 9px monospace';cx.fillText(isReturningHome?'⌂ RTH':'▲ SURFACE',auv.x+14,auv.y-12);
+  }
+
+  // ---- A* PATH ----
+  if(L.path&&!isSurfacing&&!isReturningHome&&path.length>1){
+    cx.strokeStyle='rgba(50,200,100,0.5)';cx.lineWidth=1.2;cx.setLineDash([5,4]);
+    cx.beginPath();cx.moveTo(auv.x,auv.y);
+    for(let i=Math.max(0,pathIdx-1);i<path.length;i++)cx.lineTo(path[i].x,path[i].y);
+    cx.stroke();cx.setLineDash([]);
+    for(let i=pathIdx;i<path.length;i++){cx.fillStyle='rgba(50,200,100,0.4)';cx.beginPath();cx.arc(path[i].x,path[i].y,1.8,0,Math.PI*2);cx.fill();}
+  }
+
+  // ---- OBSTACLES ----
+  for(const o of obs){
+    const og=cx.createRadialGradient(o.x,o.y,0,o.x,o.y,o.r);
+    og.addColorStop(0,o.userPlaced?'rgba(255,80,30,0.9)':'rgba(200,50,30,0.85)');
+    og.addColorStop(1,o.userPlaced?'rgba(180,40,20,0.8)':'rgba(140,30,20,0.7)');
+    cx.fillStyle=og;cx.beginPath();cx.arc(o.x,o.y,o.r,0,Math.PI*2);cx.fill();
+    cx.strokeStyle=o.userPlaced?'rgba(255,120,60,0.95)':'rgba(255,80,60,0.8)';
+    cx.lineWidth=o.userPlaced?1.2:0.8;cx.beginPath();cx.arc(o.x,o.y,o.r,0,Math.PI*2);cx.stroke();
+    cx.strokeStyle='rgba(200,50,30,0.14)';cx.lineWidth=0.5;cx.setLineDash([3,3]);
+    cx.beginPath();cx.arc(o.x,o.y,o.r+AR+4,0,Math.PI*2);cx.stroke();cx.setLineDash([]);
+    // User-placed marker
+    if(o.userPlaced){
+      cx.fillStyle='rgba(255,180,100,0.9)';cx.font='bold 7px monospace';cx.fillText('U',o.x-3,o.y+3);
+    }
+  }
+
+  // ---- WAYPOINTS ----
+  wps.forEach((w,i)=>{
+    if(isSurfacing||isReturningHome)return;
+    const reached=i<wpIdx,current=i===wpIdx;
+    const pulse=current?Math.sin(frame*0.09)*5:0;
+    if(current){cx.strokeStyle='rgba(50,200,100,0.1)';cx.lineWidth=0.8;cx.beginPath();cx.arc(w.x,w.y,20+pulse,0,Math.PI*2);cx.stroke();}
+    cx.strokeStyle=reached?'rgba(80,130,80,0.45)':current?'rgba(50,220,100,0.85)':'rgba(80,140,220,0.65)';
+    cx.lineWidth=current?1.6:0.9;cx.beginPath();cx.arc(w.x,w.y,8,0,Math.PI*2);cx.stroke();
+    cx.beginPath();cx.moveTo(w.x-6,w.y);cx.lineTo(w.x+6,w.y);cx.moveTo(w.x,w.y-6);cx.lineTo(w.x,w.y+6);cx.stroke();
+    cx.fillStyle=current?'rgba(50,220,100,0.85)':'rgba(80,140,220,0.55)';
+    cx.font='bold 8px monospace';cx.fillText('WP'+(i+1),w.x+10,w.y-6);
+    // User-placed badge
+    if(w.userPlaced){
+      cx.fillStyle='rgba(80,200,255,0.7)';cx.font='6px monospace';cx.fillText('U',w.x-3,w.y+17);
+    }
+  });
+
+  // ---- TRAIL ----
+  if(L.trail&&auv.trail.length>1){
+    for(let i=1;i<auv.trail.length;i++){
+      const a=i/auv.trail.length*0.4;
+      const tc=isReturningHome?`rgba(0,212,255,${a})`:isSurfacing?`rgba(255,200,50,${a})`:`rgba(60,160,255,${a})`;
+      cx.strokeStyle=tc;cx.lineWidth=0.7;
+      cx.beginPath();cx.moveTo(auv.trail[i-1].x,auv.trail[i-1].y);cx.lineTo(auv.trail[i].x,auv.trail[i].y);cx.stroke();
+    }
+  }
+
+  // ---- SONAR ----
+  if(L.sonar){
+    const sr=Math.max(30,70*(E.vis/100));
+    const RAYS=16;
+    const sweepAng=auv.hdg*Math.PI/180+frame*0.04,sweepSpan=Math.PI*0.4;
+    cx.save();cx.translate(auv.x,auv.y);
+    const sweepGrad=cx.createRadialGradient(0,0,0,0,0,sr);
+    sweepGrad.addColorStop(0,'rgba(0,212,180,0.12)');sweepGrad.addColorStop(1,'rgba(0,212,180,0)');
+    cx.fillStyle=sweepGrad;cx.beginPath();cx.moveTo(0,0);cx.arc(0,0,sr,sweepAng-sweepSpan,sweepAng);cx.closePath();cx.fill();
+    cx.restore();
+    for(let ri=0;ri<RAYS;ri++){
+      const ang=auv.hdg*Math.PI/180+ri*Math.PI*2/RAYS+frame*0.025;
+      let hd=sr;
+      for(const o of obs){const dx=o.x-auv.x,dy=o.y-auv.y,proj=dx*Math.cos(ang)+dy*Math.sin(ang),perp=Math.abs(-dx*Math.sin(ang)+dy*Math.cos(ang));if(proj>0&&proj<sr&&perp<o.r+3)hd=Math.min(hd,proj);}
+      oilSpills.forEach(s=>{const dx=s.x-auv.x,dy=s.y-auv.y,proj=dx*Math.cos(ang)+dy*Math.sin(ang);if(proj>0&&proj<sr)hd=Math.min(hd,proj);});
+      const hit=hd<sr*0.98;
+      cx.strokeStyle=hit?'rgba(0,240,180,0.7)':'rgba(0,180,140,0.15)';cx.lineWidth=0.5;
+      cx.beginPath();cx.moveTo(auv.x,auv.y);cx.lineTo(auv.x+Math.cos(ang)*hd,auv.y+Math.sin(ang)*hd);cx.stroke();
+      if(hit){cx.fillStyle='rgba(0,240,180,0.7)';cx.beginPath();cx.arc(auv.x+Math.cos(ang)*hd,auv.y+Math.sin(ang)*hd,1.5,0,Math.PI*2);cx.fill();}
+    }
+    cx.strokeStyle=`rgba(0,180,140,${0.1+0.06*Math.sin(frame*0.1)})`;cx.lineWidth=0.8;cx.beginPath();cx.arc(auv.x,auv.y,sr,0,Math.PI*2);cx.stroke();
+    cx.strokeStyle='rgba(0,180,140,0.06)';cx.lineWidth=0.5;cx.beginPath();cx.arc(auv.x,auv.y,sr*0.5,0,Math.PI*2);cx.stroke();
+    cx.fillStyle='rgba(0,180,140,0.4)';cx.font='6px monospace';cx.fillText(sr.toFixed(0)+'m',auv.x+sr+2,auv.y);
+  }
+
+  // ---- AUV BODY ----
+  const ax=auv.x,ay=auv.y;
+  if(isFinite(ax)&&isFinite(ay)){
+    cx.save();cx.translate(ax,ay);cx.rotate(auv.hdg*Math.PI/180+Math.PI/2);
+    const spd2=Math.sqrt(auv.vx**2+auv.vy**2)/2.4;
+    if(spd2>0.1){
+      const tc=isReturningHome?'rgba(0,212,255':isSurfacing?'rgba(255,200,50':'rgba(60,180,255';
+      const tg=cx.createRadialGradient(0,10,0,0,10,10);
+      tg.addColorStop(0,tc+`,${spd2*0.6})`);tg.addColorStop(1,'transparent');
+      cx.fillStyle=tg;cx.beginPath();cx.arc(0,10,10,0,Math.PI*2);cx.fill();
+    }
+    const hullCol=isReturningHome?'#0a5a7a':isSurfacing?'#1a7a60':battery<15?'#5a1a0a':'#1a5a8a';
+    cx.fillStyle=hullCol;cx.beginPath();cx.ellipse(0,0,AR*0.52,AR*1.2,0,0,Math.PI*2);cx.fill();
+    cx.fillStyle='rgba(255,255,255,0.1)';cx.beginPath();cx.ellipse(-2,-2,2.5,5.5,0,0,Math.PI*2);cx.fill();
+    const noseCol=isReturningHome?'#00a0cc':isSurfacing?'#22aa88':battery<15?'#aa3300':'#2080bb';
+    cx.fillStyle=noseCol;cx.beginPath();cx.moveTo(-AR*0.52,-AR*1.2);cx.quadraticCurveTo(0,-AR*2,AR*0.52,-AR*1.2);cx.fill();
+    cx.fillStyle='rgba(60,140,200,0.65)';
+    [[-1],[1]].forEach(([s])=>{cx.beginPath();cx.moveTo(s*AR*0.52,AR*0.7);cx.lineTo(s*AR*1.5,AR*1.3);cx.lineTo(s*AR*0.52,AR*1.3);cx.closePath();cx.fill();});
+    const dotCol=battery<15?'rgba(255,74,74,0.95)':oilPPM>10?'rgba(255,140,0,0.9)':'rgba(0,212,255,0.9)';
+    cx.fillStyle=dotCol;cx.beginPath();cx.arc(0,-AR*1.35,2.5,0,Math.PI*2);cx.fill();
+    if(battery<15&&frame%20<10){cx.strokeStyle='rgba(255,74,74,0.8)';cx.lineWidth=1.5;cx.beginPath();cx.arc(0,0,AR*1.8,0,Math.PI*2);cx.stroke();}
+    cx.restore();
+  }
+
+  // ---- PLACEMENT GHOST ----
+  if(placeMode && ghostX > 0 && ghostY > 0){
+    if(placeMode === 'obstacle'){
+      cx.save();cx.globalAlpha=0.55;
+      const og2=cx.createRadialGradient(ghostX,ghostY,0,ghostX,ghostY,currentObsSize);
+      og2.addColorStop(0,'rgba(255,80,30,0.7)');og2.addColorStop(1,'rgba(180,40,20,0.4)');
+      cx.fillStyle=og2;cx.beginPath();cx.arc(ghostX,ghostY,currentObsSize,0,Math.PI*2);cx.fill();
+      cx.strokeStyle='rgba(255,120,60,0.8)';cx.lineWidth=1.2;cx.setLineDash([4,3]);
+      cx.beginPath();cx.arc(ghostX,ghostY,currentObsSize,0,Math.PI*2);cx.stroke();cx.setLineDash([]);
+      cx.restore();
+      cx.fillStyle='rgba(255,120,60,0.9)';cx.font='bold 8px monospace';cx.fillText('OBSTACLE r='+currentObsSize,ghostX+currentObsSize+4,ghostY-2);
+    } else {
+      cx.save();cx.globalAlpha=0.6;
+      cx.strokeStyle='rgba(50,220,100,0.9)';cx.lineWidth=1.5;cx.setLineDash([3,2]);
+      cx.beginPath();cx.arc(ghostX,ghostY,8,0,Math.PI*2);cx.stroke();
+      cx.beginPath();cx.moveTo(ghostX-6,ghostY);cx.lineTo(ghostX+6,ghostY);cx.moveTo(ghostX,ghostY-6);cx.lineTo(ghostX,ghostY+6);cx.stroke();
+      cx.setLineDash([]);cx.restore();
+      cx.fillStyle='rgba(50,220,100,0.9)';cx.font='bold 8px monospace';cx.fillText('WP'+(wps.length+1),ghostX+11,ghostY-4);
+    }
+  }
+
+  // ---- DEPTH RULER ----
+  cx.fillStyle='rgba(80,150,200,0.35)';cx.font='7px monospace';
+  for(let i=0;i<=4;i++){
+    const y=H*0.1+i*(H*0.8/4);
+    cx.fillText(Math.round(E.dep*(i/4))+'m',3,y+3);
+    cx.strokeStyle='rgba(80,150,200,0.15)';cx.lineWidth=0.4;
+    cx.beginPath();cx.moveTo(20,y);cx.lineTo(25,y);cx.stroke();
+  }
+
+  if(minimapVisible)renderMinimap();
+}
+
+// ---- MINIMAP ----
+function renderMinimap(){
+  const mw=100,mh=75;
+  mmCx.clearRect(0,0,mw,mh);
+  mmCx.fillStyle='rgba(2,8,16,0.85)';mmCx.fillRect(0,0,mw,mh);
+  const sx=mw/W,sy=mh/H;
+  mmCx.fillStyle='rgba(200,50,30,0.7)';
+  for(const o of obs){mmCx.beginPath();mmCx.arc(o.x*sx,o.y*sy,Math.max(1.5,o.r*sx),0,Math.PI*2);mmCx.fill();}
+  if(auv.trail.length>2){
+    mmCx.strokeStyle='rgba(60,140,255,0.4)';mmCx.lineWidth=0.8;mmCx.beginPath();
+    mmCx.moveTo(auv.trail[0].x*sx,auv.trail[0].y*sy);
+    for(let i=1;i<auv.trail.length;i+=3)mmCx.lineTo(auv.trail[i].x*sx,auv.trail[i].y*sy);
+    mmCx.stroke();
+  }
+  wps.forEach((w,i)=>{mmCx.strokeStyle=i===wpIdx?'rgba(50,220,100,0.8)':'rgba(80,130,200,0.5)';mmCx.lineWidth=0.8;mmCx.beginPath();mmCx.arc(w.x*sx,w.y*sy,3,0,Math.PI*2);mmCx.stroke();});
+  oilSpills.forEach(s=>{mmCx.fillStyle='rgba(200,100,0,0.5)';mmCx.beginPath();mmCx.arc(s.x*sx,s.y*sy,2,0,Math.PI*2);mmCx.fill();});
+  plasticItems.filter(p=>!p.collected&&p.detected).forEach(p=>{mmCx.fillStyle='rgba(0,200,220,0.5)';mmCx.beginPath();mmCx.arc(p.x*sx,p.y*sy,1.5,0,Math.PI*2);mmCx.fill();});
+  detectedObjects.filter(o=>o.detected).forEach(o=>{mmCx.fillStyle='rgba(150,100,255,0.5)';mmCx.beginPath();mmCx.arc(o.x*sx,o.y*sy,1.5,0,Math.PI*2);mmCx.fill();});
+  mmCx.strokeStyle='rgba(0,200,255,0.7)';mmCx.lineWidth=1;mmCx.beginPath();mmCx.arc(HOME.x*sx,HOME.y*sy,3.5,0,Math.PI*2);mmCx.stroke();
+  mmCx.fillStyle='rgba(0,212,255,0.9)';mmCx.beginPath();mmCx.arc(auv.x*sx,auv.y*sy,2.5,0,Math.PI*2);mmCx.fill();
+  // Show ghost on minimap too
+  if(placeMode&&ghostX>0){
+    const mc=placeMode==='obstacle'?'rgba(255,80,30,0.7)':'rgba(50,220,100,0.7)';
+    mmCx.fillStyle=mc;mmCx.beginPath();mmCx.arc(ghostX*sx,ghostY*sy,2,0,Math.PI*2);mmCx.fill();
+  }
+  mmCx.strokeStyle='rgba(30,58,74,0.8)';mmCx.lineWidth=1;mmCx.strokeRect(0,0,mw,mh);
+}
+
+// ---- MINI CHARTS ----
+function drawMiniChart(id,data,color,mn,mx){
+  const el=document.getElementById(id);if(!el)return;
+  const w=el.parentElement.offsetWidth||270,h=38;
+  el.width=w;el.height=h;
+  const c=el.getContext('2d');c.clearRect(0,0,w,h);
+  if(data.length<2)return;
+  c.strokeStyle=color;c.lineWidth=1.2;c.beginPath();
+  data.forEach((v,i)=>{const px=(i/(data.length-1))*w,py=h-(v-mn)/(mx-mn)*h;i===0?c.moveTo(px,py):c.lineTo(px,py);});
+  c.stroke();c.lineTo(w,h);c.lineTo(0,h);c.closePath();
+  c.fillStyle=color.replace(/,[0-9.]+\)$/,',0.08)');c.fill();
+}
+
+// ---- LOG ----
+const logEl=document.getElementById('lg');
+let logLines=[];
+function log(msg,type){
+  const t=new Date().toISOString().substr(11,8);
+  const cls={ok:'lok',warn:'lw',err:'le',oil:'loil',plastic:'lplastic',env:'lenv',bat:'lbat',safe:'lsafe',data:'ldata'}[type]||'lk';
+  logLines.push(`<span class="${cls}">[${t}] ${msg}</span>`);
+  if(logLines.length>100)logLines.shift();
+  logEl.innerHTML=logLines.join('<br>');
+  logEl.scrollTop=logEl.scrollHeight;
+}
+
+// ---- INIT ----
+initObs();initWPs();
+updateBatteryUI();
+
+log('◈ AUV Mission Control v11 online','ok');
+log('PRM+Dijkstra pathfinder ready','ok');
+log('EKF sensor fusion active','ok');
+log('GraphSLAM localization armed','ok');
+log('📊 Kaggle datasets loaded: Oil Spill SAR (300 imgs) + Ocean Waste v1 (15 cls)','data');
+log('🛢 OIL DRILL = inject hazard spill for AUV to detect','oil');
+log('Battery auto-RTH at 15% — home base at ⌂ (top-left)','bat');
+log('🖱 Click ＋OBSTACLE or ⊕WAYPOINT then click map to place | Right-click obstacle to remove','info');
+
+(function(){
+  const legend=document.getElementById('obj-legend');
+  if(legend){legend.innerHTML=OBJ_TYPES.map(o=>`<span class="obj-tag ${o.cls}">${o.icon} ${o.type}</span>`).join('');}
+})();
+
+setTimeout(()=>{replan();log('Initial path planned','ok');},50);
+setTimeout(()=>{spawnOilSpill(1);spawnPlastic(2);spawnDetectedObject(false);},2000);
+
+function loop(){tick();render();requestAnimationFrame(loop);}
+loop();
+</script>
+</body>
+</html>

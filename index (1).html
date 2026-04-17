@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AUV Mission Control v11</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<div id="app">
+
+<!-- ===== TOP BAR ===== -->
+<div id="topbar">
+  <div class="tb-title">◈ AUV MISSION CONTROL</div>
+  <div class="tb-ver">v11.0</div>
+  <div class="badge ok"   id="b-sys">● NOMINAL</div>
+  <div class="badge info" id="b-nav">PRM+A*</div>
+  <div class="badge ok"   id="b-env">CALM SEA</div>
+  <div class="badge info" id="b-slam">SLAM 100%</div>
+  <div class="badge ok"   id="b-oil">OIL CLEAR</div>
+  <div class="badge ok"   id="b-plastic">PLASTIC CLEAR</div>
+  <div class="badge ok"   id="b-safety">SAFE</div>
+  <div class="tb-sp"></div>
+  <div id="bat-wrap">
+    <span class="bat-icon">🔋</span>
+    <span class="bat-label">POWER</span>
+    <div id="bat-bar-outer"><div id="bat-bar-inner"></div></div>
+    <span id="bat-pct">100%</span>
+  </div>
+  <div class="badge ok" id="b-mis">MISSION 1</div>
+</div>
+
+<!-- ===== SIMULATION CANVAS ===== -->
+<div id="simwrap">
+  <canvas id="cv"></canvas>
+
+  <!-- Placement tooltip -->
+  <div id="place-tooltip"></div>
+
+  <!-- Safety Alert Overlay -->
+  <div id="safety-alert">
+    <div class="sa-title" id="sa-title">⚠ LOW BATTERY</div>
+    <div class="sa-sub"   id="sa-sub">RETURNING TO HOME BASE</div>
+  </div>
+
+  <!-- Object Detection Panel (InceptionResNetV2) -->
+  <div id="obj-panel">
+    <div class="obj-title">🤖 InceptionResNetV2</div>
+    <div style="font-size:7px;color:var(--tx3);margin-bottom:4px;">aquarium-data-cots · 7 classes</div>
+    <div id="obj-list"></div>
+    <div class="obj-legend" id="obj-legend"></div>
+  </div>
+
+  <!-- Minimap -->
+  <div id="minimap">
+    <span class="mm-label">MINIMAP</span>
+    <canvas id="mm-cv" width="100" height="75"></canvas>
+  </div>
+
+  <!-- Depth zone legend -->
+  <div id="depth-legend">
+    <div class="dz"><div class="dz-bar" style="background:rgba(0,100,180,0.6)"></div>SHALLOW</div>
+    <div class="dz"><div class="dz-bar" style="background:rgba(0,60,130,0.6)"></div>MID</div>
+    <div class="dz"><div class="dz-bar" style="background:rgba(0,30,80,0.6)"></div>DEEP</div>
+  </div>
+
+  <!-- HUD Strip -->
+  <div id="hud">
+    <div class="hc"><span class="hl">Pos Err</span>  <span class="hv" id="h-err">0.00m</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Fusion</span>   <span class="hv" id="h-conf">100%</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Speed</span>    <span class="hv" id="h-spd">0.0m/s</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Heading</span>  <span class="hv" id="h-hdg">0°</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Depth</span>    <span class="hv" id="h-dep">50m</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">WP</span>       <span class="hv" id="h-wps">0/4</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Temp</span>     <span class="hv" id="h-temp">18.5°C</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">pH</span>       <span class="hv" id="h-ph">7.2</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Salinity</span> <span class="hv" id="h-sal">35‰</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Turbidity</span><span class="hv" id="h-turb">LOW</span></div>
+    <div class="hc-div"></div>
+    <div class="hc"><span class="hl">Water Q.</span> <span class="hv" id="h-wq">GOOD</span></div>
+  </div>
+</div>
+
+<!-- ===== SIDEBAR ===== -->
+<div id="side">
+
+  <!-- Simulation Control -->
+  <div class="ss">
+    <div class="st">Simulation Control</div>
+    <div class="br">
+      <button class="btn on" id="btn-run" onclick="toggleRun()">⏸ PAUSE</button>
+      <button class="btn red"            onclick="doReset()">↺ RESET</button>
+    </div>
+    <div class="br">
+      <button class="btn orange"   id="btn-surface" onclick="doSurface()">▲ SURFACE</button>
+      <button class="btn home-btn" id="btn-home"    onclick="doReturnHome()">⌂ RETURN HOME</button>
+    </div>
+    <div class="br">
+      <button class="btn"        onclick="doSpillDrill()"  title="Inject oil/chemical spill simulation">🛢 OIL DRILL</button>
+      <button class="btn"        onclick="doPlasticScan()">♻ SCAN</button>
+      <button class="btn purple" onclick="doObjectScan()">🔍 IRV2 DETECT</button>
+    </div>
+  </div>
+
+  <!-- Place on Canvas -->
+  <div class="ss">
+    <div class="st">Place on Canvas <span style="font-size:7px;color:var(--tx3);margin-left:4px;text-transform:none;font-weight:400;letter-spacing:0">(click map)</span></div>
+    <div class="br">
+      <button class="btn red" id="btn-place-obs"    onclick="togglePlaceMode('obstacle')">＋ OBSTACLE</button>
+      <button class="btn"     id="btn-place-wp"     onclick="togglePlaceMode('waypoint')">⊕ WAYPOINT</button>
+      <button class="btn"     id="btn-place-cancel" onclick="cancelPlaceMode()" style="display:none">✕ CANCEL</button>
+    </div>
+    <div style="font-size:7px;color:var(--tx3);line-height:1.6;margin-top:2px;" id="place-hint">
+      Click a button above then click anywhere on the simulation canvas to place.
+    </div>
+    <div class="sr" style="margin-top:4px;">
+      <span class="sl">Obs. Size</span>
+      <input type="range" id="sl-obs-size" min="8" max="35" step="1" value="18">
+      <span class="sv"    id="sv-obs-size">18</span>
+    </div>
+    <div style="font-size:7px;color:var(--tx3);margin-top:3px;">Right-click obstacle on map to remove it</div>
+  </div>
+
+  <!-- Layer Visibility -->
+  <div class="ss">
+    <div class="st">Layer Visibility</div>
+    <div class="br">
+      <button class="btn on" id="btn-sonar"   onclick="tog('sonar','btn-sonar')">SONAR</button>
+      <button class="btn on" id="btn-path"    onclick="tog('path','btn-path')">A* PATH</button>
+      <button class="btn on" id="btn-cur"     onclick="tog('cur','btn-cur')">CURRENTS</button>
+      <button class="btn on" id="btn-trail"   onclick="tog('trail','btn-trail')">TRAIL</button>
+    </div>
+    <div class="br">
+      <button class="btn on" id="btn-slam"    onclick="tog('slam','btn-slam')">SLAM MAP</button>
+      <button class="btn on" id="btn-cov"     onclick="tog('cov','btn-cov')">COVARIANCE</button>
+      <button class="btn on" id="btn-spill"   onclick="tog('spill','btn-spill')">OIL/CHEM</button>
+      <button class="btn on" id="btn-plastic" onclick="tog('plastic','btn-plastic')">PLASTIC</button>
+    </div>
+    <div class="br">
+      <button class="btn on" id="btn-objdet"  onclick="tog('objdet','btn-objdet')">OBJ DETECT</button>
+      <button class="btn on" id="btn-depthz"  onclick="tog('depthz','btn-depthz')">DEPTH ZONES</button>
+      <button class="btn on" id="btn-minimap" onclick="togMinimap()">MINIMAP</button>
+    </div>
+  </div>
+
+  <!-- Mission Scenario -->
+  <div class="ss">
+    <div class="st">Mission Scenario</div>
+    <div class="pg" id="presets"></div>
+  </div>
+
+  <!-- Kaggle Datasets -->
+  <div class="ss">
+    <div class="st">Kaggle Datasets</div>
+
+    <!-- Dataset 1: Oil Spill Classification -->
+    <div id="ds-panel">
+      <div class="ds-header">
+        <div class="ds-title">🛢 Oil Spill Classifier</div>
+        <div class="ds-badge">300 imgs</div>
+      </div>
+      <div class="ds-sub">Binary CNN · SAR satellite imagery · CC BY 4.0</div>
+      <div class="ds-classes">
+        <span class="ds-cls" style="border-color:rgba(249,115,22,0.5);color:#f97316">oil_spill ×150</span>
+        <span class="ds-cls" style="border-color:rgba(29,222,140,0.4);color:var(--green)">no_oil ×150</span>
+      </div>
+      <div class="ds-stats">
+        <div class="ds-stat">Train<span>240</span></div>
+        <div class="ds-stat">Val<span>30</span></div>
+        <div class="ds-stat">Test<span>30</span></div>
+        <div class="ds-stat">Acc<span id="ds-oil-acc">--</span></div>
+      </div>
+      <div class="ds-sep"></div>
+      <div style="font-size:7px;color:var(--tx3);margin-bottom:3px;">Live Inference ↓</div>
+      <div class="ds-conf-row">
+        <span class="ds-conf-lbl">oil_spill</span>
+        <div class="ds-conf-bar-bg"><div class="ds-conf-bar" id="ds-bar-oil"   style="background:rgba(249,115,22,0.7);width:0%"></div></div>
+        <span class="ds-conf-val" id="ds-val-oil">0%</span>
+      </div>
+      <div class="ds-conf-row">
+        <span class="ds-conf-lbl">no_oil</span>
+        <div class="ds-conf-bar-bg"><div class="ds-conf-bar" id="ds-bar-nooil" style="background:rgba(29,222,140,0.7);width:100%"></div></div>
+        <span class="ds-conf-val" id="ds-val-nooil">100%</span>
+      </div>
+    </div>
+
+    <!-- Dataset 2: Ocean Waste (ocean_waste v1) -->
+    <div id="ds-panel" style="margin-top:4px;">
+      <div class="ds-header">
+        <div class="ds-title">♻ Ocean Waste Detector</div>
+        <div class="ds-badge">15 classes</div>
+      </div>
+      <div class="ds-sub">YOLOv5 · Roboflow ocean_waste v1 · CC BY 4.0</div>
+      <div class="ds-classes" id="ds-plastic-classes"></div>
+      <div class="ds-stats">
+        <div class="ds-stat">Train<span>~400</span></div>
+        <div class="ds-stat">Val<span>~50</span></div>
+        <div class="ds-stat">Test<span>~50</span></div>
+        <div class="ds-stat">mAP<span id="ds-map">--</span></div>
+      </div>
+      <div class="ds-sep"></div>
+      <div style="font-size:7px;color:var(--tx3);margin-bottom:3px;">Top detections near AUV ↓</div>
+      <div id="ds-plastic-live"></div>
+    </div>
+  </div>
+
+  <!-- Environmental Sensors -->
+  <div class="ss">
+    <div class="st">Environmental Sensors</div>
+    <div class="alert-strip" id="sensor-strip">
+      <span class="sensor-val sv-ok" id="s-oil">OIL: 0ppm</span>
+      <span class="sensor-val sv-ok" id="s-ph">pH: 7.2</span>
+      <span class="sensor-val sv-ok" id="s-temp">Temp: 18.5°C</span>
+      <span class="sensor-val sv-ok" id="s-sal">Sal: 35‰</span>
+      <span class="sensor-val sv-ok" id="s-turb2">Turb: LOW</span>
+      <span class="sensor-val sv-ok" id="s-wq">WQ: GOOD</span>
+      <span class="sensor-val sv-ok" id="s-plastic">Plastic: 0</span>
+      <span class="sensor-val sv-ok" id="s-chem">Chem: CLEAR</span>
+    </div>
+    <div id="sliders"></div>
+  </div>
+
+  <!-- AI Pipeline -->
+  <div class="ss">
+    <div class="st">AI Pipeline</div>
+    <div class="pl" id="pipeline">
+      <div class="pn" id="pn0"><span class="pnl">Sensor Fusion</span> <span class="pnv">EKF active</span></div>
+      <div class="pn" id="pn1"><span class="pnl">SLAM Localiz.</span> <span class="pnv">GraphSLAM</span></div>
+      <div class="pn" id="pn2"><span class="pnl">Path Planner</span>  <span class="pnv">PRM+Dijkstra</span></div>
+      <div class="pn" id="pn3"><span class="pnl">Env Detect</span>   <span class="pnv">InceptionResV2</span></div>
+      <div class="pn" id="pn4"><span class="pnl">Obj Detect</span>   <span class="pnv">7-class aquarium</span></div>
+      <div class="pn" id="pn5"><span class="pnl">Decision Mod</span> <span class="pnv">Heading cmd</span></div>
+      <div class="pn" id="pn6"><span class="pnl">Safety Sys</span>   <span class="pnv">RTH monitor</span></div>
+      <div class="pn" id="pn7"><span class="pnl">OpenCV</span>        <span class="pnv">Edge detect</span></div>
+    </div>
+  </div>
+
+  <!-- Sensor Performance Charts -->
+  <div class="ss">
+    <div class="st">Sensor Performance</div>
+    <div class="chart-lbl">Position Error (m)</div>
+    <div class="cw"><canvas class="mc" id="ce"></canvas></div>
+    <div class="chart-lbl">Fusion Confidence (%)</div>
+    <div class="cw"><canvas class="mc" id="cc"></canvas></div>
+    <div class="chart-lbl">Battery (%)</div>
+    <div class="cw"><canvas class="mc" id="cb"></canvas></div>
+  </div>
+
+  <!-- Mission Log -->
+  <div class="ss" style="flex:1">
+    <div class="st">Mission Log</div>
+    <div id="lg"></div>
+  </div>
+
+</div><!-- #side -->
+
+<!-- ===== BOTTOM BAR ===== -->
+<div id="botbar">
+  <div class="bs">Missions: <span id="bs-m">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Obstacles: <span id="bs-o">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Landmarks: <span id="bs-l">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Spills: <span id="bs-spill">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Plastic: <span id="bs-plastic">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Objects: <span id="bs-obj">0</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">DVL: <span id="bs-d">LOCK</span></div>
+  <div class="bs-div"></div>
+  <div class="bs">Mode: <span id="bs-mode">MISSION</span></div>
+  <div class="tb-sp"></div>
+  <div class="bs" id="bs-place-hint">Click ＋OBSTACLE or ⊕WAYPOINT then click map to place</div>
+</div>
+
+</div><!-- #app -->
+
+<!-- ============================================================
+     JavaScript — load order matters
+     ============================================================ -->
+<script src="js/constants.js"></script>
+<script src="js/state.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/pathplanner.js"></script>
+<script src="js/environment.js"></script>
+<script src="js/spills.js"></script>
+<script src="js/plastic.js"></script>
+<script src="js/objects.js"></script>
+<script src="js/kaggle.js"></script>
+<script src="js/sensors.js"></script>
+<script src="js/physics.js"></script>
+<script src="js/missions.js"></script>
+<script src="js/hud.js"></script>
+<script src="js/placement.js"></script>
+<script src="js/render.js"></script>
+<script src="js/main.js"></script>
+
+</body>
+</html>
